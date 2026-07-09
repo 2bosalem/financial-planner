@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-لوحة التخطيط المالي الذكية — Smart Financial Planning Dashboard (v3)
+لوحة التخطيط المالي الذكية — Smart Financial Planning Dashboard (v4)
 Ultra-clean mobile-first UI:
   * One anchor input ("Current Status Update") instead of an editable grid
   * Dynamic reforecasting from the anchor month forward
   * Single end-of-plan health gauge + coach + milestone cards
-  * Two-column projection table
+  * 3-column table (date | frozen baseline | dynamic extrapolation)
+    with the current-month row visually highlighted as the pivot point
 Arabic RTL, no traditional charts.
 """
 
@@ -450,36 +451,58 @@ else:
     st.markdown(cards_html, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------
-# Clean 2-column projection table (read-only, mobile-friendly)
+# 3-column projection table with anchor-row highlighting
+#   التاريخ | الخطة الأصلية الثابتة | التوقع المحدث
 # ---------------------------------------------------------------
-st.markdown('<div class="section-title">📋 المسار الشهري المتوقع (24 شهرًا)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">📋 المسار الشهري — الخطة الأصلية مقابل التوقع المحدث</div>', unsafe_allow_html=True)
 if has_anchor:
-    st.caption("الأشهر قبل شهرك الحالي تعرض الخطة الأصلية، وشهرك الحالي وما بعده يعرضان التوقع المحدث من رصيدك الفعلي.")
+    st.caption(
+        "الصف المميز باللون هو شهرك الحالي — نقطة الارتكاز التي تفصل الماضي (الخطة الأصلية) "
+        "عن المستقبل المُعاد توقعه من رصيدك الفعلي."
+    )
 else:
-    st.caption("لم تُدخل رصيدًا فعليًا بعد — الجدول يعرض الخطة المعيارية الأصلية.")
+    st.caption("لم تُدخل رصيدًا فعليًا بعد — العمودان متطابقان ويعرضان الخطة المعيارية الأصلية.")
 
-row_labels = []
-for i in range(24):
-    marker = "  ⬅️ أنت هنا" if (has_anchor and i == anchor_idx) else ""
-    row_labels.append(f"{month_labels[i]}{marker}")
+row_labels = [
+    (f"📍 {month_labels[i]}" if (has_anchor and i == anchor_idx) else month_labels[i])
+    for i in range(24)
+]
 
 table_df = pd.DataFrame(
     {
-        "الشهر": row_labels,
-        "الرصيد المتوقع المحدث": projected_balances,
+        "التاريخ": row_labels,
+        "الخطة الأصلية 📐": standard_balances,
+        "التوقع المحدث 🔮": projected_balances,
     }
 )
 
+
+def highlight_anchor_row(row):
+    """Premium blue tint + bold on the anchor (current month) row."""
+    if has_anchor and row.name == anchor_idx:
+        return [
+            "background-color: rgba(57, 106, 252, 0.22); "
+            "font-weight: 900; "
+            "border-top: 2px solid #396afc; border-bottom: 2px solid #396afc;"
+        ] * len(row)
+    return [""] * len(row)
+
+
+styled_table = (
+    table_df.style
+    .apply(highlight_anchor_row, axis=1)
+    .format({"الخطة الأصلية 📐": "{:,.0f}", "التوقع المحدث 🔮": "{:,.0f}"})
+)
+
 st.dataframe(
-    table_df,
+    styled_table,
     hide_index=True,
     use_container_width=True,
     height=500,
     column_config={
-        "الشهر": st.column_config.TextColumn("الشهر", width="medium"),
-        "الرصيد المتوقع المحدث": st.column_config.NumberColumn(
-            f"الرصيد المتوقع المحدث ({currency})", format="%.0f"
-        ),
+        "التاريخ": st.column_config.TextColumn("التاريخ", width="medium"),
+        "الخطة الأصلية 📐": st.column_config.TextColumn(f"الخطة الأصلية ({currency})"),
+        "التوقع المحدث 🔮": st.column_config.TextColumn(f"التوقع المحدث ({currency})"),
     },
 )
 
