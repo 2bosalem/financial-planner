@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v9)
-Ultra-premium Apple-inspired UI, iPhone-tailored single-column canvas:
-  * Secure gate layer — hardcoded access code "2806", centered login
-  * Phone-frame layout (max-width 540px) — the May Target Terminal gets
-    full executive width; nothing is squished into side columns
-  * Isolated rounded cards (14–16px), centered numbers, hairline borders
-  * Financial logic IDENTICAL to the approved version:
-      - baseline: obligations = structural hit in Month 1
-      - الخطة المحدثة: '—' before the anchor; anchors at the entered
-        balance (minus the Month-1 hit only when the anchor IS month 1)
-      - continuous chain: next = ((current − spending) + salary)
-Arabic RTL.
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v10)
+Hard-fixed financial core + luxury light UI:
+  MATH
+  * الخطة الأصلية : month 1 = ((initial − TOTAL obligations) + salary) − spending
+                    month n = (previous + salary) − spending
+  * الخطة المحدثة : anchor month = the entered balance EXACTLY
+                    (it already contains that month's salary AND the
+                     obligations — nothing is added or deducted)
+                    following months = (previous + salary) − spending
+                    months before the anchor = '—'
+  UI
+  * Passcode gate "2806", phone-frame canvas (max 540px)
+  * Ultra-clean light cards (#F8F9FA / #E2E8F0 hairlines / 16px radius)
+  * May Milestones terminal: light executive blocks, emerald surplus badge,
+    deep-crimson deficit badge
+  * Champagne-gold May rows + soft-blue anchor row, everything centered
+Arabic RTL, zero-scroll.
 """
 
 import streamlit as st
@@ -34,9 +39,9 @@ MAY = 4          # index of مايو
 ACCESS_CODE = "2806"
 
 # ---------------------------------------------------------------
-# Premium CSS — typography, phone-frame canvas, and self-contained
-# custom blocks only. Native widget surfaces stay with the Streamlit
-# theme (.streamlit/config.toml) so nothing bleeds or overlaps.
+# Premium CSS — light executive system. Native widget surfaces stay
+# with the Streamlit theme (.streamlit/config.toml); custom CSS only
+# styles typography, spacing, and self-contained HTML blocks.
 # ---------------------------------------------------------------
 st.markdown(
     """
@@ -54,7 +59,7 @@ st.markdown(
         font-family: 'Material Symbols Rounded' !important;
     }
 
-    /* Phone-frame canvas: one elegant centered column */
+    /* Phone-frame canvas */
     .stApp { direction: rtl; }
     .block-container {
         max-width: 540px;
@@ -65,7 +70,7 @@ st.markdown(
     [data-testid="stHorizontalBlock"] { gap: 0.7rem; }
     header[data-testid="stHeader"] { height: 1.4rem; background: transparent; }
 
-    /* Widgets: spacing + centered values only (no surface overrides) */
+    /* Widgets: spacing + centered values only */
     label[data-testid="stWidgetLabel"] p { font-size: 0.76rem; font-weight: 700; }
     [data-testid="stNumberInput"] input { direction: ltr; text-align: center; font-weight: 700; }
     [data-testid="stTextInput"] input { text-align: center; font-weight: 700; }
@@ -76,149 +81,128 @@ st.markdown(
 
     /* ---------------- Hero ---------------- */
     .hero {
-        text-align: center;
-        font-size: 1.14rem;
-        font-weight: 800;
-        color: #1d1d1f;
-        letter-spacing: 0.4px;
-        margin: 0 0 2px 0;
+        text-align: center; font-size: 1.14rem; font-weight: 800;
+        color: #0f172a; letter-spacing: 0.4px; margin: 0 0 2px 0;
     }
     .hero-sub {
-        text-align: center;
-        font-size: 0.68rem;
-        font-weight: 700;
-        color: #86868b;
-        letter-spacing: 2.5px;
-        margin: 0 0 4px 0;
+        text-align: center; font-size: 0.68rem; font-weight: 700;
+        color: #94a3b8; letter-spacing: 2.5px; margin: 0 0 4px 0;
     }
 
     /* ---------------- Secure gate ---------------- */
     .gate-icon { text-align: center; font-size: 2.4rem; margin: 2.2rem 0 0.4rem 0; }
-    .gate-title {
-        text-align: center; font-size: 1.05rem; font-weight: 800;
-        color: #1d1d1f; margin: 0;
-    }
-    .gate-sub {
-        text-align: center; font-size: 0.74rem; color: #86868b;
-        margin: 2px 0 10px 0;
-    }
+    .gate-title { text-align: center; font-size: 1.05rem; font-weight: 800; color: #0f172a; margin: 0; }
+    .gate-sub { text-align: center; font-size: 0.74rem; color: #94a3b8; margin: 2px 0 10px 0; }
 
     /* ---------------- Status line ---------------- */
     .status-card {
-        background: #ffffff;
-        border: 1px solid #e5e5ea;
+        background: #f8f9fa;
+        border: 1px solid #e2e8f0;
         border-radius: 16px;
         padding: 12px 16px;
         text-align: center;
         font-size: 0.82rem;
         font-weight: 700;
-        color: #1d1d1f;
+        color: #0f172a;
         line-height: 1.7;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.05);
     }
     .status-dot {
         display: inline-block; width: 9px; height: 9px;
         border-radius: 50%; margin-left: 8px; vertical-align: 1px;
     }
-    .dot-green { background: #34c759; }
-    .dot-amber { background: #ff9f0a; }
-    .dot-red   { background: #ff3b30; }
-    .dot-info  { background: #0a84ff; }
+    .dot-green { background: #059669; }
+    .dot-amber { background: #d97706; }
+    .dot-red   { background: #b91c1c; }
+    .dot-info  { background: #2563eb; }
     .status-strong { font-weight: 800; }
-    .t-green { color: #248a3d; }
-    .t-amber { color: #c67b00; }
-    .t-red   { color: #d70015; }
+    .t-green { color: #047857; }
+    .t-amber { color: #b45309; }
+    .t-red   { color: #b91c1c; }
 
-    /* ---------------- May Target Terminal (executive width) ---------------- */
+    /* ---------------- May Milestones terminal (light executive) ---------------- */
     .may-terminal {
-        background: linear-gradient(180deg, #1d1d1f 0%, #2c2c2e 100%);
+        background: #f8f9fa;
+        border: 1px solid #e2e8f0;
         border-radius: 16px;
-        padding: 16px 16px 14px 16px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.16);
+        padding: 14px 14px 12px 14px;
     }
     .may-terminal-title {
-        text-align: center;
-        font-size: 0.7rem;
-        font-weight: 800;
-        color: #c9a86a;
-        letter-spacing: 3px;
-        margin-bottom: 12px;
+        text-align: center; font-size: 0.68rem; font-weight: 800;
+        color: #94a3b8; letter-spacing: 3px; margin-bottom: 10px;
     }
     .may-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .may-cell {
         text-align: center;
-        background: rgba(255,255,255,0.06);
-        border: 1px solid rgba(201,168,106,0.35);
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
         border-radius: 14px;
         padding: 12px 8px 11px 8px;
     }
     .may-year {
-        font-size: 0.86rem; font-weight: 800; color: #f5f5f7;
+        font-size: 0.86rem; font-weight: 800; color: #0f172a;
         margin-bottom: 9px; letter-spacing: 0.4px;
     }
     .may-item { margin-bottom: 7px; }
-    .may-k { font-size: 0.62rem; color: #98989d; font-weight: 700; margin-bottom: 1px; }
+    .may-k { font-size: 0.62rem; color: #94a3b8; font-weight: 700; margin-bottom: 1px; }
     .may-v {
-        font-size: 1.22rem; font-weight: 800; color: #f5f5f7;
+        font-size: 1.22rem; font-weight: 800; color: #0f172a;
         direction: ltr; text-align: center; line-height: 1.25;
     }
-    .may-v.pos { color: #30d158; }
-    .may-v.neg { color: #ff453a; }
-    .may-v.mut { color: #636366; font-weight: 400; }
+    .may-v.pos { color: #047857; }
+    .may-v.neg { color: #b91c1c; }
+    .may-v.mut { color: #cbd5e1; font-weight: 400; }
     .delta-chip {
         display: inline-block; direction: ltr;
-        font-size: 0.68rem; font-weight: 800;
+        font-size: 0.68rem; font-weight: 800; color: #ffffff;
         padding: 2px 12px; border-radius: 999px;
     }
-    .chip-pos { background: rgba(48,209,88,0.16); color: #30d158; }
-    .chip-neg { background: rgba(255,69,58,0.16); color: #ff453a; }
-    .chip-mut { background: rgba(255,255,255,0.08); color: #98989d; }
+    .stApp .chip-pos, .stApp .chip-neg { color: #ffffff; }
+    .chip-pos { background: #047857; }
+    .chip-neg { background: #b91c1c; }
+    .chip-mut { background: #eef1f5; color: #94a3b8; }
 
     /* ---------------- Data table ---------------- */
     .tbl-card {
         background: #ffffff;
-        border: 1px solid #e5e5ea;
+        border: 1px solid #e2e8f0;
         border-radius: 16px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.05);
         max-height: 258px;
         overflow-y: auto;
     }
     table.wtable { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
     table.wtable th {
         position: sticky; top: 0; z-index: 1;
-        background: #ffffff;
-        color: #86868b;
-        font-size: 0.66rem;
-        font-weight: 800;
-        letter-spacing: 0.5px;
+        background: #f8f9fa;
+        color: #94a3b8;
+        font-size: 0.66rem; font-weight: 800; letter-spacing: 0.5px;
         padding: 9px 6px 7px 6px;
         text-align: center;
-        border-bottom: 1px solid #e5e5ea;
+        border-bottom: 1px solid #e2e8f0;
     }
     table.wtable td {
         padding: 5.5px 6px;
         text-align: center;
-        color: #1d1d1f;
-        border-bottom: 1px solid #f2f2f7;
+        color: #0f172a;
+        border-bottom: 1px solid #f1f5f9;
     }
     table.wtable td.num { direction: ltr; font-weight: 700; }
-    table.wtable td.mut { color: #c7c7cc; font-weight: 400; }
-    table.wtable td.neg { color: #d70015; font-weight: 800; }
+    table.wtable td.mut { color: #cbd5e1; font-weight: 400; }
+    table.wtable td.neg { color: #b91c1c; font-weight: 800; }
 
-    /* May milestone rows — champagne gold, heavy bold */
+    /* May rows — champagne gold, heavy bold */
     table.wtable tr.may-row td {
-        background: linear-gradient(90deg, rgba(201,168,106,0.16), rgba(52,199,89,0.08));
+        background: rgba(212, 180, 96, 0.14);
         font-weight: 800;
-        border-top: 1px solid rgba(201,168,106,0.4);
-        border-bottom: 1px solid rgba(201,168,106,0.4);
+        border-top: 1px solid rgba(212, 180, 96, 0.45);
+        border-bottom: 1px solid rgba(212, 180, 96, 0.45);
     }
 
     /* Anchor row — soft blue, declared last so it wins over May */
     table.wtable tr.anchor-row td {
-        background: rgba(10,132,255,0.09);
+        background: rgba(37, 99, 235, 0.08);
         font-weight: 800;
-        border-top: 1.5px solid #0a84ff;
-        border-bottom: 1.5px solid #0a84ff;
+        border-top: 1.5px solid #2563eb;
+        border-bottom: 1.5px solid #2563eb;
     }
     </style>
     """,
@@ -232,7 +216,7 @@ def fmt(x: float) -> str:
 
 
 # ===============================================================
-# SECURE GATE — access code required before anything renders
+# SECURE GATE
 # ===============================================================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -262,9 +246,7 @@ if not st.session_state.authenticated:
 
 # ===============================================================
 # MAIN TERMINAL — visual order via placeholders:
-#   hero → status → anchor card → May Terminal → table → settings
-# (settings are FILLED first in code so their values feed every block,
-#  while remaining at the bottom of the page visually)
+#   hero → status → anchor card → May terminal → table → settings
 # ===============================================================
 st.markdown('<div class="hero">🏦 منصة الثروة الخاصة</div>', unsafe_allow_html=True)
 st.markdown('<div class="hero-sub">PRIVATE WEALTH TERMINAL</div>', unsafe_allow_html=True)
@@ -276,7 +258,7 @@ table_area = st.container()
 settings_area = st.container()
 
 # ---------------------------------------------------------------
-# Settings (rendered at the bottom visually, executed first)
+# Settings (bottom of page visually, executed first for values)
 # ---------------------------------------------------------------
 with settings_area:
     with st.expander("الإعدادات الأساسية", expanded=False):
@@ -296,7 +278,7 @@ with settings_area:
             salary = st.number_input("الراتب الشهري", min_value=0.0, value=8000.0, step=250.0, key="salary")
             spend_limit = st.number_input("حد الصرف الشهري", min_value=0.0, value=6000.0, step=250.0, key="spend_limit")
 
-    with st.expander("الالتزامات السنوية — خصم هيكلي في الشهر الأول", expanded=False):
+    with st.expander("الالتزامات السنوية — تُخصم في الشهر الأول من الخطة الأصلية", expanded=False):
         default_obligations = [
             ("تأمين السيارة", 3000.0),
             ("رسوم المدارس", 6000.0),
@@ -314,7 +296,7 @@ with settings_area:
 total_obligations = float(sum(obligation_amounts))
 
 # ---------------------------------------------------------------
-# Timeline (real committed settings values — no session-state guessing)
+# Timeline
 # ---------------------------------------------------------------
 month_labels, month_nums = [], []
 for i in range(24):
@@ -324,7 +306,7 @@ for i in range(24):
     month_nums.append(m)
 
 # ---------------------------------------------------------------
-# Anchor inputs (visually right under the status line)
+# Anchor inputs
 # ---------------------------------------------------------------
 with anchor_area:
     with st.container(border=True):
@@ -339,7 +321,7 @@ with anchor_area:
             )
         with a2:
             anchor_balance = st.number_input(
-                "الرصيد الفعلي الحالي",
+                "الرصيد الفعلي الحالي (شامل راتب الشهر)",
                 value=None,
                 step=500.0,
                 placeholder="أدخل رصيدك…",
@@ -349,31 +331,34 @@ with anchor_area:
 has_anchor = anchor_balance is not None
 
 # ---------------------------------------------------------------
-# Chain 1 — الخطة الأصلية (baseline)  [IDENTICAL approved logic]
-#   Month 1: ((initial − TOTAL obligations) − spending) + salary
-#   Month n: ((previous − spending) + salary)
+# Chain 1 — الخطة الأصلية (baseline)
+#   Month 1 : ((initial − TOTAL obligations) + salary) − spending
+#   Month n : (previous + salary) − spending
 # ---------------------------------------------------------------
 standard_balances = []
 prev = float(initial_balance)
 for i in range(24):
     structural_hit = total_obligations if i == 0 else 0.0
-    prev = ((prev - structural_hit) - float(spend_limit)) + float(salary)
+    prev = ((prev - structural_hit) + float(salary)) - float(spend_limit)
     standard_balances.append(prev)
 
 # ---------------------------------------------------------------
-# Chain 2 — الخطة المحدثة (anchored forecast)  [IDENTICAL approved logic]
+# Chain 2 — الخطة المحدثة (anchored forecast) — HARD-FIXED
 #   * months BEFORE the anchor : None → rendered as '—'
-#   * anchor month             : entered balance (minus the Month-1
-#                                structural hit only when anchor IS month 1)
-#   * months AFTER the anchor  : ((previous − spending) + salary)
+#   * anchor month             : the entered balance EXACTLY.
+#       It is the user's TOTAL available cash for that month — it already
+#       contains that month's salary AND absorbs the annual obligations,
+#       so NOTHING is added or deducted here (no salary double-count,
+#       no obligations re-hit).
+#   * months AFTER the anchor  : (previous + salary) − spending
+#       — the salary chain begins strictly at the FOLLOWING month.
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
 if has_anchor:
-    start_val = float(anchor_balance) - (total_obligations if anchor_idx == 0 else 0.0)
-    updated_balances[anchor_idx] = start_val
-    prev = start_val
+    prev = float(anchor_balance)
+    updated_balances[anchor_idx] = prev
     for i in range(anchor_idx + 1, 24):
-        prev = (prev - float(spend_limit)) + float(salary)
+        prev = (prev + float(salary)) - float(spend_limit)
         updated_balances[i] = prev
 
 # ---------------------------------------------------------------
@@ -385,12 +370,13 @@ target_idx = next((i for i in may_ids if i >= base_pos), may_ids[-1])
 target_label = month_labels[target_idx]
 
 # ---------------------------------------------------------------
-# Status line — calm, one sentence
+# Status line
 # ---------------------------------------------------------------
 with status_area:
     if not has_anchor or updated_balances[target_idx] is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — ستُبنى الخطة المحدثة من رصيدك مباشرة حتى محطة مايو."
+            "أدخل شهرك الحالي ورصيدك الفعلي (شامل راتب الشهر) لبدء التتبع — "
+            "تُبنى الخطة المحدثة من رصيدك كما هو، ويبدأ احتساب الراتب من الشهر التالي."
         )
     else:
         m_std = standard_balances[target_idx]
@@ -427,7 +413,7 @@ with status_area:
     )
 
 # ---------------------------------------------------------------
-# May Target Terminal — executive dark block, full canvas width
+# May Milestones terminal — light executive blocks
 # ---------------------------------------------------------------
 with terminal_area:
     cells = ""
@@ -463,7 +449,7 @@ with terminal_area:
     st.markdown(
         f"""
         <div class="may-terminal">
-          <div class="may-terminal-title">منصة أهداف مايو — MAY TARGETS</div>
+          <div class="may-terminal-title">منصة أهداف مايو — MAY MILESTONES</div>
           <div class="may-grid">{cells}</div>
         </div>
         """,
@@ -520,8 +506,3 @@ with table_area:
         """,
         unsafe_allow_html=True,
     )
-
-    if has_anchor and anchor_idx == 0:
-        st.caption(
-            f"خُصم إجمالي الالتزامات ({fmt(total_obligations)} {currency}) كخصم هيكلي في الشهر الأول من كلا الخطتين."
-        )
