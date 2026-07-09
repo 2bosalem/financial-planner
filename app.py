@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-لوحة التخطيط المالي الذكية — Smart Financial Planning Dashboard
-Streamlit app: 24-month plan, Standard vs Actual scenarios,
-AI coach message, health gauge, and milestone cards. Arabic RTL, mobile-first.
+لوحة التخطيط المالي الذكية — Smart Financial Planning Dashboard (v2)
+24-month plan with THREE scenarios:
+  1. Standard baseline (static, from day 1)
+  2. Actual balances   (user-entered, editable grid)
+  3. Extrapolated path (dynamic: re-anchored on the latest actual balance)
+Arabic RTL, mobile-first, no traditional charts.
 """
 
 import streamlit as st
@@ -57,7 +60,7 @@ st.markdown(
         border-radius: 18px;
         padding: 18px 20px;
         color: #ffffff;
-        font-size: 1.05rem;
+        font-size: 1.02rem;
         font-weight: 700;
         line-height: 1.9;
         margin-bottom: 1rem;
@@ -68,11 +71,19 @@ st.markdown(
     .coach-red   { background: linear-gradient(135deg, #cb2d3e, #ef473a); }
     .coach-info  { background: linear-gradient(135deg, #2b5876, #4e4376); }
     .coach-title { font-size: 0.85rem; opacity: 0.85; font-weight: 400; }
+    .coach-traj  {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed rgba(255,255,255,0.45);
+        font-size: 0.95rem;
+        font-weight: 400;
+    }
 
     /* Metric blocks */
-    .metric-row { display: flex; gap: 10px; margin-bottom: 1rem; }
+    .metric-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 1rem; }
     .metric-block {
-        flex: 1;
+        flex: 1 1 40%;
+        min-width: 140px;
         border-radius: 14px;
         padding: 12px 8px;
         text-align: center;
@@ -120,11 +131,16 @@ def fmt(x: float) -> str:
     return f"{x:,.0f}"
 
 
+def project_month(prev_balance: float, obligation: float, salary: float, spend_limit: float) -> float:
+    """Core formula: ((prev - obligations) + salary) - target spending limit."""
+    return (prev_balance - obligation) + salary - spend_limit
+
+
 # ---------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------
 st.markdown('<div class="app-title">💰 لوحة التخطيط المالي الذكية</div>', unsafe_allow_html=True)
-st.markdown('<div class="app-subtitle">خطة ٢٤ شهرًا • السيناريو المستهدف مقابل الواقع الفعلي</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-subtitle">خطة ٢٤ شهرًا • المعياري الثابت × الفعلي × التوقع المحدث</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------------
 # 1) Base inputs
@@ -165,8 +181,7 @@ with st.expander("📌 الالتزامات السنوية (٤ بنود)", expan
         obligations.append((name.strip() or f"التزام {i}", float(amount), int(month)))
 
 # ---------------------------------------------------------------
-# Timeline labels + Standard (baseline) scenario
-# Target Balance = ((Prev Balance - Obligations this month) + Salary) - Spend Limit
+# Timeline labels
 # ---------------------------------------------------------------
 month_labels = []
 for i in range(24):
@@ -178,37 +193,64 @@ obligations_per_month = [
     sum(amount for _, amount, due in obligations if due == i + 1) for i in range(24)
 ]
 
-standard_balances = []
-prev = float(initial_balance)
-for i in range(24):
-    prev = (prev - obligations_per_month[i]) + float(salary) - float(spend_limit)
-    standard_balances.append(prev)
-
 # ---------------------------------------------------------------
 # Session persistence for the 24 "Actual Balance" inputs
 # ---------------------------------------------------------------
 if "actual_balances" not in st.session_state:
     st.session_state.actual_balances = [None] * 24
+actuals = st.session_state.actual_balances
 
-# Placeholders so the coach / gauge / cards render at the TOP of the page,
-# while their values come from the data editor rendered further below.
+# ---------------------------------------------------------------
+# Scenario 1 — Standard baseline (STATIC, anchored on day-1 inputs only)
+# ---------------------------------------------------------------
+standard_balances = []
+prev = float(initial_balance)
+for i in range(24):
+    prev = project_month(prev, obligations_per_month[i], float(salary), float(spend_limit))
+    standard_balances.append(prev)
+
+# ---------------------------------------------------------------
+# Scenario 3 — Extrapolated path (DYNAMIC, re-anchored on actual data)
+#   * month with an actual entry  -> extrapolated = actual (reality wins)
+#   * month without an entry      -> projected from the previous
+#     extrapolated value, so every future month automatically chains
+#     from the LATEST actual balance the user entered.
+# ---------------------------------------------------------------
+extrapolated_balances = []
+prev_ext = float(initial_balance)
+for i in range(24):
+    if actuals[i] is not None:
+        value = float(actuals[i])
+    else:
+        value = project_month(prev_ext, obligations_per_month[i], float(salary), float(spend_limit))
+    extrapolated_balances.append(value)
+    prev_ext = value
+
+filled_idx = [i for i, v in enumerate(actuals) if v is not None]
+
+# Placeholders so the coach / gauges / cards render at the TOP of the page,
+# while the editable grid lives further below.
 coach_area = st.container()
 gauge_area = st.container()
 metrics_area = st.container()
 milestones_area = st.container()
 
 # ---------------------------------------------------------------
-# Editable data grid (Actual scenario)
+# Editable data grid — all 3 scenario columns
 # ---------------------------------------------------------------
 st.markdown('<div class="section-title">📋 سجل الأرصدة الشهرية (24 شهرًا)</div>', unsafe_allow_html=True)
-st.caption("أدخل رصيدك الفعلي في بداية كل شهر في عمود «الرصيد الفعلي». تُحفظ القيم تلقائيًا خلال الجلسة.")
+st.caption(
+    "أدخل رصيدك الحقيقي في عمود «الرصيد الفعلي». عمود «التوقع المحدث» يعيد رسم مستقبلك "
+    "تلقائيًا انطلاقًا من آخر رصيد فعلي أدخلته، بينما يبقى «المعياري الثابت» خطتك الأصلية للمقارنة."
+)
 
 grid_df = pd.DataFrame(
     {
         "الشهر": month_labels,
         "التزامات الشهر": obligations_per_month,
-        "الرصيد المستهدف": standard_balances,
-        "الرصيد الفعلي": pd.array(st.session_state.actual_balances, dtype="Float64"),
+        "المعياري الثابت": standard_balances,
+        "الرصيد الفعلي": pd.array(actuals, dtype="Float64"),
+        "التوقع المحدث": extrapolated_balances,
     }
 )
 
@@ -217,147 +259,228 @@ edited_df = st.data_editor(
     hide_index=True,
     use_container_width=True,
     height=430,
-    disabled=["الشهر", "التزامات الشهر", "الرصيد المستهدف"],
+    disabled=["الشهر", "التزامات الشهر", "المعياري الثابت", "التوقع المحدث"],
     column_config={
         "الشهر": st.column_config.TextColumn("الشهر", width="medium"),
-        "التزامات الشهر": st.column_config.NumberColumn("التزامات الشهر", format="%.0f"),
-        "الرصيد المستهدف": st.column_config.NumberColumn("الرصيد المستهدف", format="%.0f"),
+        "التزامات الشهر": st.column_config.NumberColumn("التزامات", format="%.0f"),
+        "المعياري الثابت": st.column_config.NumberColumn(
+            "المعياري الثابت 📐", format="%.0f", help="الخطة النظرية الأصلية منذ اليوم الأول — لا تتغير"
+        ),
         "الرصيد الفعلي": st.column_config.NumberColumn(
-            "الرصيد الفعلي ✍️", format="%.0f", help="رصيدك الحقيقي في بداية الشهر"
+            "الرصيد الفعلي ✍️", format="%.0f", help="رصيدك الحقيقي في بداية الشهر — هذا العمود قابل للتعديل"
+        ),
+        "التوقع المحدث": st.column_config.NumberColumn(
+            "التوقع المحدث 🔮", format="%.0f", help="مسار مستقبلي مُعاد حسابه من آخر رصيد فعلي أدخلته"
         ),
     },
 )
 
-# Persist edits back into session_state
-st.session_state.actual_balances = [
-    None if pd.isna(v) else float(v) for v in edited_df["الرصيد الفعلي"]
-]
-actuals = st.session_state.actual_balances
+# Persist edits, then rerun once so the extrapolated column, gauges and
+# coach all reflect the new entry immediately (no stale values).
+new_actuals = [None if pd.isna(v) else float(v) for v in edited_df["الرصيد الفعلي"]]
+if new_actuals != st.session_state.actual_balances:
+    st.session_state.actual_balances = new_actuals
+    st.rerun()
 
-filled_idx = [i for i, v in enumerate(actuals) if v is not None]
-st.progress(
-    len(filled_idx) / 24,
-    text=f"أدخلت {len(filled_idx)} من 24 شهرًا",
-)
+st.progress(len(filled_idx) / 24, text=f"أدخلت {len(filled_idx)} من 24 شهرًا")
 
 # ---------------------------------------------------------------
-# Health status calculation (based on latest month with actual data)
+# Health status — current position (latest actual vs original baseline)
 # ---------------------------------------------------------------
+def zone_of(diff: float, ref: float) -> str:
+    pct = diff / ref * 100.0
+    if diff >= 0:
+        return "green"
+    if pct >= -10.0:
+        return "amber"
+    return "red"
+
+
 if filled_idx:
     idx = max(filled_idx)
     actual_now = actuals[idx]
     standard_now = standard_balances[idx]
-    diff = actual_now - standard_now
-    ref = max(abs(standard_now), 1.0)
-    pct = diff / ref * 100.0
+    diff_now = actual_now - standard_now
+    ref_now = max(abs(standard_now), 1.0)
+    pct_now = diff_now / ref_now * 100.0
+    status_now = zone_of(diff_now, ref_now)
 
-    if diff >= 0:
-        status = "green"
-    elif pct >= -10.0:
-        status = "amber"
+    # --- Future trajectory: the extrapolated path beyond the latest entry ---
+    future_ids = list(range(idx + 1, 24))
+    if future_ids:
+        fut_vals = [extrapolated_balances[i] for i in future_ids]
+        fut_min = min(fut_vals)
+        fut_min_i = future_ids[fut_vals.index(fut_min)]
+        end_ext = extrapolated_balances[23]
+        end_std = standard_balances[23]
+        end_diff = end_ext - end_std
+        end_ref = max(abs(end_std), 1.0)
+        end_pct = end_diff / end_ref * 100.0
+        if fut_min < 0:
+            status_traj = "red"
+        else:
+            status_traj = zone_of(end_diff, end_ref)
     else:
-        status = "red"
+        fut_min = fut_min_i = None
+        end_ext, end_std = extrapolated_balances[23], standard_balances[23]
+        end_diff = end_ext - end_std
+        end_pct = end_diff / max(abs(end_std), 1.0) * 100.0
+        status_traj = status_now
 else:
     idx = None
-    status = "info"
+    status_now = status_traj = "info"
+
+SEVERITY = {"green": 0, "amber": 1, "red": 2}
 
 # ---------------------------------------------------------------
-# 3) AI Financial Coach (top banner)
+# AI Financial Coach (top banner) — current position + future trajectory
 # ---------------------------------------------------------------
 with coach_area:
-    if status == "info":
-        msg = "👋 أهلًا بك! أدخل رصيدك الفعلي لأول شهر في الجدول بالأسفل، وسأبدأ فورًا بتحليل صحتك المالية وتقديم نصائح مخصصة لك."
-        css_class = "coach-info"
-    elif status == "green":
-        msg = (
-            f"🎉 عمل رائع! في <b>{month_labels[idx]}</b> أنت متقدم على حد الأمان بنسبة "
-            f"<b>{abs(pct):.1f}%</b> (+{fmt(diff)} {currency}). "
-            f"استمر على هذا النهج وفكّر في توجيه الفائض نحو الادخار أو الاستثمار."
+    if status_now == "info":
+        banner_class = "coach-info"
+        body = (
+            "👋 أهلًا بك! أدخل رصيدك الفعلي لأول شهر في الجدول بالأسفل، وسأبدأ فورًا "
+            "بتحليل وضعك الحالي وإعادة رسم توقعات مستقبلك المالي شهرًا بشهر."
         )
-        css_class = "coach-green"
-    elif status == "amber":
-        msg = (
-            f"⚠️ انتبه! في <b>{month_labels[idx]}</b> رصيدك أدنى من الخطة بمقدار "
-            f"<b>{fmt(abs(diff))} {currency}</b> ({abs(pct):.1f}%). "
-            f"أنت في منطقة الحذر — راقب مصروفك اليومي هذا الشهر لتعود إلى المسار."
-        )
-        css_class = "coach-amber"
+        traj_line = ""
     else:
-        daily_cut = abs(diff) / 30.0
-        msg = (
-            f"🚨 تحذير: في <b>{month_labels[idx]}</b> دخلت المنطقة غير المريحة بمقدار "
-            f"<b>{fmt(abs(diff))} {currency}</b> ({abs(pct):.1f}% تحت الهدف). "
-            f"قلّل صرفك اليومي بحوالي <b>{fmt(daily_cut)} {currency}</b> حتى نهاية الشهر لتصحيح المسار."
-        )
-        css_class = "coach-red"
+        # Line 1 — where you stand TODAY vs the original plan
+        if status_now == "green":
+            body = (
+                f"🎉 عمل رائع! في <b>{month_labels[idx]}</b> أنت متقدم على الخطة الأصلية بنسبة "
+                f"<b>{abs(pct_now):.1f}%</b> (+{fmt(diff_now)} {currency})."
+            )
+        elif status_now == "amber":
+            body = (
+                f"⚠️ انتبه! في <b>{month_labels[idx]}</b> رصيدك أدنى من الخطة الأصلية بمقدار "
+                f"<b>{fmt(abs(diff_now))} {currency}</b> ({abs(pct_now):.1f}%). أنت في منطقة الحذر."
+            )
+        else:
+            daily_cut = abs(diff_now) / 30.0
+            body = (
+                f"🚨 تحذير: في <b>{month_labels[idx]}</b> أنت داخل المنطقة غير المريحة بمقدار "
+                f"<b>{fmt(abs(diff_now))} {currency}</b> ({abs(pct_now):.1f}% تحت الهدف). "
+                f"قلّل صرفك اليومي بحوالي <b>{fmt(daily_cut)} {currency}</b>."
+            )
 
+        # Line 2 — where your UPDATED trajectory is heading
+        if status_traj == "red" and fut_min is not None and fut_min < 0:
+            traj_line = (
+                f"🔮 <b>المسار المستقبلي:</b> إذا استمررت على هذا الوضع، يتوقع النموذج أن يهبط رصيدك إلى "
+                f"<b>{fmt(fut_min)} {currency}</b> في <b>{month_labels[fut_min_i]}</b> — "
+                f"أي دخول المنطقة غير المريحة. خفّض الصرف الآن قبل الوصول لتلك المحطة."
+            )
+        elif status_traj == "red":
+            traj_line = (
+                f"🔮 <b>المسار المستقبلي:</b> توقعك المحدث لنهاية الخطة (<b>{fmt(end_ext)} {currency}</b>) "
+                f"أدنى بكثير من الهدف الأصلي (<b>{fmt(end_std)} {currency}</b>) بفارق {fmt(abs(end_diff))} {currency}."
+            )
+        elif status_traj == "amber":
+            traj_line = (
+                f"🔮 <b>المسار المستقبلي:</b> مسارك المحدث ينحرف قليلًا عن الخطة — متوقع أن تنهي الخطة عند "
+                f"<b>{fmt(end_ext)} {currency}</b> مقابل هدف <b>{fmt(end_std)} {currency}</b> "
+                f"({abs(end_pct):.1f}% أدنى). انحراف قابل للتصحيح بسهولة."
+            )
+        else:
+            traj_line = (
+                f"🔮 <b>المسار المستقبلي:</b> ممتاز — توقعك المحدث لنهاية الخطة "
+                f"<b>{fmt(end_ext)} {currency}</b> يساوي أو يتجاوز الهدف الأصلي ({fmt(end_std)} {currency})."
+            )
+
+        # Banner colour reflects the WORSE of (today, trajectory)
+        worst = status_now if SEVERITY[status_now] >= SEVERITY[status_traj] else status_traj
+        banner_class = {"green": "coach-green", "amber": "coach-amber", "red": "coach-red"}[worst]
+
+    traj_html = f'<div class="coach-traj">{traj_line}</div>' if traj_line else ""
     st.markdown(
-        f'<div class="coach-box {css_class}">'
-        f'<div class="coach-title">🤖 مدربك المالي الذكي</div>{msg}</div>',
+        f'<div class="coach-box {banner_class}">'
+        f'<div class="coach-title">🤖 مدربك المالي الذكي</div>{body}{traj_html}</div>',
         unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------
-# 1) Dynamic health gauge + colored metric blocks
+# Health gauges: (1) current month vs baseline  (2) end-of-plan trajectory
 # ---------------------------------------------------------------
+def make_gauge(title: str, value: float, target: float, currency: str) -> go.Figure:
+    ref = max(abs(target), 1.0)
+    lo = min(0.0, value, target)
+    hi = max(value, target, 1.0)
+    span = max(hi - lo, 1.0)
+    rng_min = lo - 0.05 * span
+    rng_max = hi + 0.15 * span
+    amber_low = target - 0.10 * ref  # bottom of the caution zone
+
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number+delta",
+            value=value,
+            number={"valueformat": ",.0f", "suffix": f" {currency}", "font": {"size": 26}},
+            delta={"reference": target, "valueformat": ",.0f"},
+            title={"text": title, "font": {"size": 14}},
+            gauge={
+                "axis": {"range": [rng_min, rng_max], "tickformat": ",.0f"},
+                "bar": {"color": "#1f2a44", "thickness": 0.28},
+                "steps": [
+                    {"range": [rng_min, amber_low], "color": "#ef5350"},
+                    {"range": [amber_low, target], "color": "#ffca28"},
+                    {"range": [target, rng_max], "color": "#66bb6a"},
+                ],
+                "threshold": {
+                    "line": {"color": "#1f2a44", "width": 4},
+                    "thickness": 0.9,
+                    "value": target,
+                },
+            },
+        )
+    )
+    fig.update_layout(
+        height=240,
+        margin=dict(l=25, r=25, t=55, b=5),
+        paper_bgcolor="rgba(0,0,0,0)",
+        font={"family": "Cairo, sans-serif"},
+    )
+    return fig
+
+
 with gauge_area:
     if idx is not None:
-        lo = min(0.0, actual_now, standard_now)
-        hi = max(actual_now, standard_now, 1.0)
-        span = max(hi - lo, 1.0)
-        rng_min = lo - 0.05 * span
-        rng_max = hi + 0.15 * span
-        amber_low = standard_now - 0.10 * ref  # bottom of the caution zone
-
-        fig = go.Figure(
-            go.Indicator(
-                mode="gauge+number+delta",
-                value=actual_now,
-                number={"valueformat": ",.0f", "suffix": f" {currency}"},
-                delta={"reference": standard_now, "valueformat": ",.0f"},
-                title={"text": f"مؤشر الصحة المالية — {month_labels[idx]}", "font": {"size": 15}},
-                gauge={
-                    "axis": {"range": [rng_min, rng_max], "tickformat": ",.0f"},
-                    "bar": {"color": "#1f2a44", "thickness": 0.28},
-                    "steps": [
-                        {"range": [rng_min, amber_low], "color": "#ef5350"},
-                        {"range": [amber_low, standard_now], "color": "#ffca28"},
-                        {"range": [standard_now, rng_max], "color": "#66bb6a"},
-                    ],
-                    "threshold": {
-                        "line": {"color": "#1f2a44", "width": 4},
-                        "thickness": 0.9,
-                        "value": standard_now,
-                    },
-                },
+        g1, g2 = st.columns(2)
+        with g1:
+            st.plotly_chart(
+                make_gauge(f"الوضع الحالي — {month_labels[idx]}", actual_now, standard_now, currency),
+                use_container_width=True,
+                config={"displayModeBar": False},
             )
-        )
-        fig.update_layout(
-            height=270,
-            margin=dict(l=30, r=30, t=60, b=10),
-            paper_bgcolor="rgba(0,0,0,0)",
-            font={"family": "Cairo, sans-serif"},
-        )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        with g2:
+            st.plotly_chart(
+                make_gauge("توقع نهاية الخطة (شهر 24)", end_ext, end_std, currency),
+                use_container_width=True,
+                config={"displayModeBar": False},
+            )
 
 with metrics_area:
     if idx is not None:
-        diff_class = {"green": "mb-green", "amber": "mb-amber", "red": "mb-red"}[status]
-        diff_sign = "+" if diff >= 0 else "−"
+        now_class = {"green": "mb-green", "amber": "mb-amber", "red": "mb-red"}[status_now]
+        traj_class = {"green": "mb-green", "amber": "mb-amber", "red": "mb-red"}[status_traj]
+        diff_sign = "+" if diff_now >= 0 else "−"
         st.markdown(
             f"""
             <div class="metric-row">
               <div class="metric-block mb-blue">
-                <div class="metric-label">الرصيد الفعلي</div>
+                <div class="metric-label">الرصيد الفعلي الآن</div>
                 <div class="metric-value">{fmt(actual_now)}</div>
               </div>
               <div class="metric-block mb-gray">
-                <div class="metric-label">الرصيد المستهدف</div>
+                <div class="metric-label">المعياري الثابت الآن</div>
                 <div class="metric-value">{fmt(standard_now)}</div>
               </div>
-              <div class="metric-block {diff_class}">
-                <div class="metric-label">الفرق</div>
-                <div class="metric-value">{diff_sign}{fmt(abs(diff))}</div>
+              <div class="metric-block {now_class}">
+                <div class="metric-label">الفرق الحالي</div>
+                <div class="metric-value">{diff_sign}{fmt(abs(diff_now))}</div>
+              </div>
+              <div class="metric-block {traj_class}">
+                <div class="metric-label">التوقع المحدث لنهاية الخطة</div>
+                <div class="metric-value">{fmt(end_ext)}</div>
               </div>
             </div>
             """,
@@ -365,7 +488,7 @@ with metrics_area:
         )
 
 # ---------------------------------------------------------------
-# 3) Future milestone cards (upcoming annual obligations)
+# Future milestone cards (upcoming annual obligations)
 # ---------------------------------------------------------------
 with milestones_area:
     st.markdown('<div class="section-title">🗓️ المحطات القادمة — الالتزامات السنوية</div>', unsafe_allow_html=True)
@@ -388,11 +511,14 @@ with milestones_area:
                 cls, when = "ms-amber", f"بعد {months_away} أشهر"
             else:
                 cls, when = "ms-green", f"بعد {months_away} شهرًا"
+            # Show the expected balance right after paying this obligation
+            after_balance = extrapolated_balances[due - 1]
             cards_html += (
                 f'<div class="milestone {cls}">'
                 f"<h4>📌 {name}</h4>"
                 f'<span class="amt">{fmt(amount)} {currency}</span><br>'
-                f'<span class="when">{month_labels[due - 1]} • {when}</span>'
+                f'<span class="when">{month_labels[due - 1]} • {when}</span><br>'
+                f'<span class="when">الرصيد المتوقع بعده: {fmt(after_balance)} {currency}</span>'
                 f"</div>"
             )
         cards_html += "</div>"
@@ -402,6 +528,7 @@ with milestones_area:
 # Footer
 # ---------------------------------------------------------------
 st.caption(
-    "💡 القاعدة الحسابية: الرصيد المستهدف = (رصيد الشهر السابق − التزامات الشهر) + الراتب − حد الصرف المستهدف. "
-    "تُحفظ مدخلاتك طوال الجلسة الحالية."
+    "💡 المعياري الثابت = خطتك النظرية من اليوم الأول ولا يتغير. التوقع المحدث = يساوي رصيدك الفعلي "
+    "في الأشهر المُدخلة، ثم يعيد إسقاط بقية الأشهر انطلاقًا من آخر رصيد فعلي بنفس القاعدة: "
+    "(الرصيد السابق − التزامات الشهر) + الراتب − حد الصرف. تُحفظ مدخلاتك طوال الجلسة."
 )
