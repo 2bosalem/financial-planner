@@ -1,22 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v10)
-Hard-fixed financial core + luxury light UI:
-  MATH
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v11)
+  MATH (hard rules)
   * الخطة الأصلية : month 1 = ((initial − TOTAL obligations) + salary) − spending
                     month n = (previous + salary) − spending
-  * الخطة المحدثة : anchor month = the entered balance EXACTLY
-                    (it already contains that month's salary AND the
-                     obligations — nothing is added or deducted)
+  * الخطة المحدثة : anchor month = entered balance − TOTAL obligations
+                    (the 4 annual obligations are cleanly deducted at the
+                     anchor so the future path is never artificially inflated;
+                     the entered balance already includes that month's salary,
+                     so salary additions begin strictly the FOLLOWING month)
                     following months = (previous + salary) − spending
                     months before the anchor = '—'
   UI
-  * Passcode gate "2806", phone-frame canvas (max 540px)
-  * Ultra-clean light cards (#F8F9FA / #E2E8F0 hairlines / 16px radius)
-  * May Milestones terminal: light executive blocks, emerald surplus badge,
-    deep-crimson deficit badge
-  * Champagne-gold May rows + soft-blue anchor row, everything centered
-Arabic RTL, zero-scroll.
+  * Passcode gate "2806"
+  * Apple system font stack (SF Arabic on iPhone) — no stylized webfont
+  * Vertical sequence: anchor inputs → status → May console (future
+    milestones only) → 3-column table → collapsed settings expanders
+  * Zero-scroll phone canvas, everything center-aligned
+Arabic RTL.
 """
 
 import streamlit as st
@@ -39,19 +40,18 @@ MAY = 4          # index of مايو
 ACCESS_CODE = "2806"
 
 # ---------------------------------------------------------------
-# Premium CSS — light executive system. Native widget surfaces stay
-# with the Streamlit theme (.streamlit/config.toml); custom CSS only
-# styles typography, spacing, and self-contained HTML blocks.
+# CSS — clean Apple system typography (SF Arabic renders natively on
+# iPhone), compressed zero-scroll spacing, and self-contained blocks.
+# Native widget surfaces stay with .streamlit/config.toml.
 # ---------------------------------------------------------------
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
-
-    /* Typography — icon-font safe */
+    /* Clean system typography — no stylized webfont; icon-font safe */
     .stApp, .stApp p, .stApp div, .stApp span, .stApp label,
     .stApp input, .stApp button, .stApp td, .stApp th {
-        font-family: 'Tajawal', -apple-system, system-ui, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                     system-ui, "Helvetica Neue", Arial, sans-serif;
     }
     [data-testid="stIconMaterial"],
     span[class*="material-symbols"],
@@ -59,56 +59,56 @@ st.markdown(
         font-family: 'Material Symbols Rounded' !important;
     }
 
-    /* Phone-frame canvas */
+    /* Phone-frame canvas, compressed for a single iPhone viewport */
     .stApp { direction: rtl; }
     .block-container {
         max-width: 540px;
-        padding-top: 0.9rem;
-        padding-bottom: 0.6rem;
+        padding-top: 0.7rem;
+        padding-bottom: 0.4rem;
     }
-    [data-testid="stVerticalBlock"] { gap: 0.6rem; }
-    [data-testid="stHorizontalBlock"] { gap: 0.7rem; }
-    header[data-testid="stHeader"] { height: 1.4rem; background: transparent; }
+    [data-testid="stVerticalBlock"] { gap: 0.5rem; }
+    [data-testid="stHorizontalBlock"] { gap: 0.6rem; }
+    header[data-testid="stHeader"] { height: 1.2rem; background: transparent; }
 
     /* Widgets: spacing + centered values only */
-    label[data-testid="stWidgetLabel"] p { font-size: 0.76rem; font-weight: 700; }
-    [data-testid="stNumberInput"] input { direction: ltr; text-align: center; font-weight: 700; }
-    [data-testid="stTextInput"] input { text-align: center; font-weight: 700; }
-    [data-testid="stExpander"] summary p { font-size: 0.8rem; font-weight: 700; }
+    label[data-testid="stWidgetLabel"] p { font-size: 0.74rem; font-weight: 600; }
+    [data-testid="stNumberInput"] input { direction: ltr; text-align: center; font-weight: 600; }
+    [data-testid="stTextInput"] input { text-align: center; font-weight: 600; }
+    [data-testid="stExpander"] summary p { font-size: 0.78rem; font-weight: 600; }
     [data-testid="stVerticalBlockBorderWrapper"] { border-radius: 16px; }
-    [data-testid="stCaptionContainer"] p { font-size: 0.68rem; margin: 0; text-align: center; }
-    .stButton button, .stFormSubmitButton button { border-radius: 12px; font-weight: 800; }
+    [data-testid="stCaptionContainer"] p { font-size: 0.66rem; margin: 0; text-align: center; }
+    .stButton button, .stFormSubmitButton button { border-radius: 12px; font-weight: 700; }
 
     /* ---------------- Hero ---------------- */
     .hero {
-        text-align: center; font-size: 1.14rem; font-weight: 800;
-        color: #0f172a; letter-spacing: 0.4px; margin: 0 0 2px 0;
+        text-align: center; font-size: 1.08rem; font-weight: 700;
+        color: #0f172a; letter-spacing: 0.3px; margin: 0;
     }
     .hero-sub {
-        text-align: center; font-size: 0.68rem; font-weight: 700;
-        color: #94a3b8; letter-spacing: 2.5px; margin: 0 0 4px 0;
+        text-align: center; font-size: 0.64rem; font-weight: 600;
+        color: #94a3b8; letter-spacing: 2.5px; margin: 0 0 2px 0;
     }
 
     /* ---------------- Secure gate ---------------- */
     .gate-icon { text-align: center; font-size: 2.4rem; margin: 2.2rem 0 0.4rem 0; }
-    .gate-title { text-align: center; font-size: 1.05rem; font-weight: 800; color: #0f172a; margin: 0; }
-    .gate-sub { text-align: center; font-size: 0.74rem; color: #94a3b8; margin: 2px 0 10px 0; }
+    .gate-title { text-align: center; font-size: 1.02rem; font-weight: 700; color: #0f172a; margin: 0; }
+    .gate-sub { text-align: center; font-size: 0.72rem; color: #94a3b8; margin: 2px 0 10px 0; }
 
     /* ---------------- Status line ---------------- */
     .status-card {
         background: #f8f9fa;
         border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 12px 16px;
+        border-radius: 14px;
+        padding: 9px 14px;
         text-align: center;
-        font-size: 0.82rem;
-        font-weight: 700;
+        font-size: 0.78rem;
+        font-weight: 600;
         color: #0f172a;
-        line-height: 1.7;
+        line-height: 1.65;
     }
     .status-dot {
-        display: inline-block; width: 9px; height: 9px;
-        border-radius: 50%; margin-left: 8px; vertical-align: 1px;
+        display: inline-block; width: 8px; height: 8px;
+        border-radius: 50%; margin-left: 7px; vertical-align: 1px;
     }
     .dot-green { background: #059669; }
     .dot-amber { background: #d97706; }
@@ -119,80 +119,87 @@ st.markdown(
     .t-amber { color: #b45309; }
     .t-red   { color: #b91c1c; }
 
-    /* ---------------- May Milestones terminal (light executive) ---------------- */
+    /* ---------------- May Milestones console (future only) ---------------- */
     .may-terminal {
         background: #f8f9fa;
         border: 1px solid #e2e8f0;
         border-radius: 16px;
-        padding: 14px 14px 12px 14px;
+        padding: 12px 12px 10px 12px;
     }
     .may-terminal-title {
-        text-align: center; font-size: 0.68rem; font-weight: 800;
-        color: #94a3b8; letter-spacing: 3px; margin-bottom: 10px;
+        text-align: center; font-size: 0.64rem; font-weight: 700;
+        color: #94a3b8; letter-spacing: 3px; margin-bottom: 8px;
     }
-    .may-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .may-grid { display: grid; gap: 10px; }
     .may-cell {
         text-align: center;
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 14px;
-        padding: 12px 8px 11px 8px;
+        padding: 10px 8px 9px 8px;
     }
     .may-year {
-        font-size: 0.86rem; font-weight: 800; color: #0f172a;
-        margin-bottom: 9px; letter-spacing: 0.4px;
+        font-size: 0.82rem; font-weight: 800; color: #0f172a;
+        margin-bottom: 7px; letter-spacing: 0.3px;
     }
-    .may-item { margin-bottom: 7px; }
-    .may-k { font-size: 0.62rem; color: #94a3b8; font-weight: 700; margin-bottom: 1px; }
+    .may-item { margin-bottom: 6px; }
+    .may-k { font-size: 0.6rem; color: #94a3b8; font-weight: 600; margin-bottom: 1px; }
     .may-v {
-        font-size: 1.22rem; font-weight: 800; color: #0f172a;
-        direction: ltr; text-align: center; line-height: 1.25;
+        font-size: 1.16rem; font-weight: 800; color: #0f172a;
+        direction: ltr; text-align: center; line-height: 1.2;
+        font-variant-numeric: tabular-nums;
     }
     .may-v.pos { color: #047857; }
     .may-v.neg { color: #b91c1c; }
     .may-v.mut { color: #cbd5e1; font-weight: 400; }
     .delta-chip {
         display: inline-block; direction: ltr;
-        font-size: 0.68rem; font-weight: 800; color: #ffffff;
+        font-size: 0.66rem; font-weight: 700; color: #ffffff;
         padding: 2px 12px; border-radius: 999px;
     }
     .stApp .chip-pos, .stApp .chip-neg { color: #ffffff; }
     .chip-pos { background: #047857; }
     .chip-neg { background: #b91c1c; }
     .chip-mut { background: #eef1f5; color: #94a3b8; }
+    .may-empty {
+        text-align: center; font-size: 0.74rem; color: #94a3b8; padding: 6px 0;
+    }
 
     /* ---------------- Data table ---------------- */
     .tbl-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 16px;
-        max-height: 258px;
+        max-height: 250px;
         overflow-y: auto;
     }
-    table.wtable { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    table.wtable {
+        width: 100%; border-collapse: collapse; font-size: 0.76rem;
+        font-variant-numeric: tabular-nums;
+    }
     table.wtable th {
         position: sticky; top: 0; z-index: 1;
         background: #f8f9fa;
         color: #94a3b8;
-        font-size: 0.66rem; font-weight: 800; letter-spacing: 0.5px;
-        padding: 9px 6px 7px 6px;
+        font-size: 0.64rem; font-weight: 700; letter-spacing: 0.5px;
+        padding: 8px 6px 6px 6px;
         text-align: center;
         border-bottom: 1px solid #e2e8f0;
     }
     table.wtable td {
-        padding: 5.5px 6px;
+        padding: 5px 6px;
         text-align: center;
         color: #0f172a;
         border-bottom: 1px solid #f1f5f9;
     }
-    table.wtable td.num { direction: ltr; font-weight: 700; }
+    table.wtable td.num { direction: ltr; font-weight: 600; }
     table.wtable td.mut { color: #cbd5e1; font-weight: 400; }
-    table.wtable td.neg { color: #b91c1c; font-weight: 800; }
+    table.wtable td.neg { color: #b91c1c; font-weight: 700; }
 
-    /* May rows — champagne gold, heavy bold */
+    /* May rows — champagne gold, bold */
     table.wtable tr.may-row td {
         background: rgba(212, 180, 96, 0.14);
-        font-weight: 800;
+        font-weight: 700;
         border-top: 1px solid rgba(212, 180, 96, 0.45);
         border-bottom: 1px solid rgba(212, 180, 96, 0.45);
     }
@@ -200,7 +207,7 @@ st.markdown(
     /* Anchor row — soft blue, declared last so it wins over May */
     table.wtable tr.anchor-row td {
         background: rgba(37, 99, 235, 0.08);
-        font-weight: 800;
+        font-weight: 700;
         border-top: 1.5px solid #2563eb;
         border-bottom: 1.5px solid #2563eb;
     }
@@ -245,14 +252,16 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ===============================================================
-# MAIN TERMINAL — visual order via placeholders:
-#   hero → status → anchor card → May terminal → table → settings
+# MAIN TERMINAL — strict top-to-bottom sequence:
+#   hero → anchor inputs → status → May console → table → settings
+# (settings are executed first in code so values feed every block,
+#  but they sit at the very bottom of the page)
 # ===============================================================
 st.markdown('<div class="hero">🏦 منصة الثروة الخاصة</div>', unsafe_allow_html=True)
 st.markdown('<div class="hero-sub">PRIVATE WEALTH TERMINAL</div>', unsafe_allow_html=True)
 
-status_area = st.container()
 anchor_area = st.container()
+status_area = st.container()
 terminal_area = st.container()
 table_area = st.container()
 settings_area = st.container()
@@ -278,7 +287,7 @@ with settings_area:
             salary = st.number_input("الراتب الشهري", min_value=0.0, value=8000.0, step=250.0, key="salary")
             spend_limit = st.number_input("حد الصرف الشهري", min_value=0.0, value=6000.0, step=250.0, key="spend_limit")
 
-    with st.expander("الالتزامات السنوية — تُخصم في الشهر الأول من الخطة الأصلية", expanded=False):
+    with st.expander("الالتزامات السنوية الأربعة", expanded=False):
         default_obligations = [
             ("تأمين السيارة", 3000.0),
             ("رسوم المدارس", 6000.0),
@@ -306,7 +315,7 @@ for i in range(24):
     month_nums.append(m)
 
 # ---------------------------------------------------------------
-# Anchor inputs
+# [TOP] Current Status Update — anchor inputs
 # ---------------------------------------------------------------
 with anchor_area:
     with st.container(border=True):
@@ -327,6 +336,9 @@ with anchor_area:
                 placeholder="أدخل رصيدك…",
                 key="anchor_balance",
             )
+        st.caption(
+            f"يُخصم إجمالي الالتزامات السنوية ({fmt(total_obligations)}) تلقائيًا من رصيدك المدخل عند نقطة الانطلاق."
+        )
 
 has_anchor = anchor_balance is not None
 
@@ -343,30 +355,28 @@ for i in range(24):
     standard_balances.append(prev)
 
 # ---------------------------------------------------------------
-# Chain 2 — الخطة المحدثة (anchored forecast) — HARD-FIXED
+# Chain 2 — الخطة المحدثة (anchored forecast)
 #   * months BEFORE the anchor : None → rendered as '—'
-#   * anchor month             : the entered balance EXACTLY.
-#       It is the user's TOTAL available cash for that month — it already
-#       contains that month's salary AND absorbs the annual obligations,
-#       so NOTHING is added or deducted here (no salary double-count,
-#       no obligations re-hit).
+#   * anchor month             : entered balance − TOTAL obligations
+#       (clean deduction at the anchor so the future path is never
+#        inflated; the entered balance already includes that month's
+#        salary, so NO salary is added at the anchor itself)
 #   * months AFTER the anchor  : (previous + salary) − spending
-#       — the salary chain begins strictly at the FOLLOWING month.
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
 if has_anchor:
-    prev = float(anchor_balance)
+    prev = float(anchor_balance) - total_obligations   # clean obligations deduction
     updated_balances[anchor_idx] = prev
     for i in range(anchor_idx + 1, 24):
         prev = (prev + float(salary)) - float(spend_limit)
         updated_balances[i] = prev
 
 # ---------------------------------------------------------------
-# May milestones + focal May (next مايو at/after the anchor)
+# May milestones — FUTURE ONLY (at/after the selected current month)
 # ---------------------------------------------------------------
-may_ids = [i for i in range(24) if month_nums[i] == MAY]
-base_pos = anchor_idx if has_anchor else 0
-target_idx = next((i for i in may_ids if i >= base_pos), may_ids[-1])
+all_may_ids = [i for i in range(24) if month_nums[i] == MAY]
+future_may_ids = [i for i in all_may_ids if i >= anchor_idx]
+target_idx = future_may_ids[0] if future_may_ids else all_may_ids[-1]
 target_label = month_labels[target_idx]
 
 # ---------------------------------------------------------------
@@ -375,8 +385,8 @@ target_label = month_labels[target_idx]
 with status_area:
     if not has_anchor or updated_balances[target_idx] is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي (شامل راتب الشهر) لبدء التتبع — "
-            "تُبنى الخطة المحدثة من رصيدك كما هو، ويبدأ احتساب الراتب من الشهر التالي."
+            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — تُخصم الالتزامات فورًا "
+            "ويبدأ احتساب الراتب من الشهر التالي حتى محطة مايو."
         )
     else:
         m_std = standard_balances[target_idx]
@@ -413,51 +423,56 @@ with status_area:
     )
 
 # ---------------------------------------------------------------
-# May Milestones terminal — light executive blocks
+# [MIDDLE] May Milestones console — future milestones only
 # ---------------------------------------------------------------
 with terminal_area:
-    cells = ""
-    for mi in may_ids:
-        std_v = standard_balances[mi]
-        upd_v = updated_balances[mi]
-        std_cls = "neg" if std_v < 0 else ""
-        if upd_v is None:
-            upd_html = '<div class="may-v mut">—</div>'
-            chip = '<span class="delta-chip chip-mut">بانتظار التحديث</span>'
-        else:
-            upd_cls = "neg" if upd_v < 0 else "pos"
-            upd_html = f'<div class="may-v {upd_cls}">{fmt(upd_v)}</div>'
-            delta = upd_v - std_v
-            if delta >= 0:
-                chip = f'<span class="delta-chip chip-pos">فائض +{fmt(delta)} {currency}</span>'
+    if not future_may_ids:
+        inner = '<div class="may-empty">لا توجد محطات مايو متبقية في نافذة الخطة الحالية.</div>'
+    else:
+        cells = ""
+        for mi in future_may_ids:
+            std_v = standard_balances[mi]
+            upd_v = updated_balances[mi]
+            std_cls = "neg" if std_v < 0 else ""
+            if upd_v is None:
+                upd_html = '<div class="may-v mut">—</div>'
+                chip = '<span class="delta-chip chip-mut">بانتظار التحديث</span>'
             else:
-                chip = f'<span class="delta-chip chip-neg">عجز −{fmt(abs(delta))} {currency}</span>'
-        cells += f"""
-        <div class="may-cell">
-          <div class="may-year">مايو {month_labels[mi].split()[-1]}</div>
-          <div class="may-item">
-            <div class="may-k">الخطة الأصلية</div>
-            <div class="may-v {std_cls}">{fmt(std_v)}</div>
-          </div>
-          <div class="may-item">
-            <div class="may-k">الخطة المحدثة</div>
-            {upd_html}
-          </div>
-          {chip}
-        </div>"""
+                upd_cls = "neg" if upd_v < 0 else "pos"
+                upd_html = f'<div class="may-v {upd_cls}">{fmt(upd_v)}</div>'
+                delta = upd_v - std_v
+                if delta >= 0:
+                    chip = f'<span class="delta-chip chip-pos">فائض +{fmt(delta)} {currency}</span>'
+                else:
+                    chip = f'<span class="delta-chip chip-neg">عجز −{fmt(abs(delta))} {currency}</span>'
+            cells += f"""
+            <div class="may-cell">
+              <div class="may-year">مايو {month_labels[mi].split()[-1]}</div>
+              <div class="may-item">
+                <div class="may-k">الخطة الأصلية</div>
+                <div class="may-v {std_cls}">{fmt(std_v)}</div>
+              </div>
+              <div class="may-item">
+                <div class="may-k">الخطة المحدثة</div>
+                {upd_html}
+              </div>
+              {chip}
+            </div>"""
+        cols = len(future_may_ids)
+        inner = f'<div class="may-grid" style="grid-template-columns: repeat({cols}, 1fr);">{cells}</div>'
 
     st.markdown(
         f"""
         <div class="may-terminal">
           <div class="may-terminal-title">منصة أهداف مايو — MAY MILESTONES</div>
-          <div class="may-grid">{cells}</div>
+          {inner}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------
-# 3-column table: التاريخ | الخطة الأصلية | الخطة المحدثة
+# [BELOW] 3-column table: التاريخ | الخطة الأصلية | الخطة المحدثة
 # ---------------------------------------------------------------
 with table_area:
     rows = ""
