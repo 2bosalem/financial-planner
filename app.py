@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v13)
-  ABSOLUTE MATH RULES
-  * الخطة الأصلية :
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v14)
+  ABSOLUTE MATH RULES — two fully independent calculation loops
+  * الخطة الأصلية (depends ONLY on plan settings):
       Month 1 = (الرصيد الافتتاحي − TOTAL annual obligations) + الراتب − حد الصرف
                 e.g. August 2026: (80410 − 29200) + 3300 − 5000 = 49510
       Month n = (previous + الراتب) − حد الصرف
-  * الخطة المحدثة (dynamic anchor + future-mirror engine):
+  * الخطة المحدثة (absolute time-anchoring — 100% INDEPENDENT of شهر البداية):
+      The anchor is stored as an ABSOLUTE calendar month (year + month),
+      never as a row index, so changing the plan's start month can never
+      shift or alter the updated plan.
       Anchor month  = الرصيد الفعلي الحالي EXACTLY as typed — a raw
-                      real-world snapshot, zero modifications.
-      Anchor + 1    = (anchor input − TOTAL annual obligations)
-                      + الراتب − حد الصرف
-                      (the future mirror copies the structural obligations
-                       hit into the new timeline so it is never forgotten)
-      Later months  = (previous + الراتب) − حد الصرف
+                      real-world snapshot (no salary, no spending,
+                      no obligations).
+      Future months = (previous + الراتب) − حد الصرف — depends only on
+                      the distance from the anchor month.
       Months before the anchor = '—'.
   UI
   * Passcode gate "2806", Apple system font, centered numbers,
@@ -308,28 +309,33 @@ with settings_area:
 total_obligations = float(sum(obligation_amounts))
 
 # ---------------------------------------------------------------
-# Timeline
+# Timeline — each month is an ABSOLUTE (year, month) identity
 # ---------------------------------------------------------------
-month_labels, month_nums = [], []
+timeline, month_labels, month_nums = [], [], []
 for i in range(24):
     m = (start_month - 1 + i) % 12
     y = int(start_year) + (start_month - 1 + i) // 12
+    timeline.append((y, m))
     month_labels.append(f"{MONTH_NAMES[m]} {y}")
     month_nums.append(m)
 
 # ---------------------------------------------------------------
 # [TOP] Current Status Update — anchor inputs
+# The anchor selection is an ABSOLUTE calendar month (year, month),
+# NOT a row index — changing شهر البداية re-positions the rows but the
+# anchor stays pinned to the same real-world month, so الخطة المحدثة
+# never shifts.
 # ---------------------------------------------------------------
 with anchor_area:
     with st.container(border=True):
         a1, a2 = st.columns(2)
         with a1:
-            anchor_idx = st.selectbox(
+            anchor_month_abs = st.selectbox(
                 "الشهر الحالي",
-                options=list(range(24)),
-                format_func=lambda i: f"{i + 1} — {month_labels[i]}",
+                options=timeline,
+                format_func=lambda t: f"{MONTH_NAMES[t[1]]} {t[0]}",
                 index=0,
-                key="anchor_month_idx",
+                key="anchor_abs_month",
             )
         with a2:
             anchor_balance = st.number_input(
@@ -340,10 +346,11 @@ with anchor_area:
                 key="anchor_balance",
             )
         st.caption(
-            "يظهر رصيدك المدخل كما هو تمامًا في شهره الحالي، "
-            f"وتُخصم الالتزامات السنوية ({fmt(total_obligations)}) مرة واحدة في الشهر التالي مباشرة."
+            "يظهر رصيدك المدخل كما هو تمامًا في شهره — نقطة ارتساء زمنية مطلقة "
+            "لا تتأثر بتغيير شهر بداية الخطة."
         )
 
+anchor_idx = timeline.index(anchor_month_abs)
 has_anchor = anchor_balance is not None
 
 # ---------------------------------------------------------------
@@ -362,25 +369,21 @@ for i in range(24):
     standard_balances.append(prev)
 
 # ---------------------------------------------------------------
-# Chain 2 — الخطة المحدثة (dynamic anchor + future-mirror engine)
+# Chain 2 — الخطة المحدثة (absolute time-anchoring)
+#   Fully independent loop — reads NOTHING from the baseline chain and
+#   depends only on the anchor month's absolute position in time.
 #   * months BEFORE the anchor : None → rendered as '—'
 #   * anchor month             : الرصيد الفعلي الحالي EXACTLY as typed —
-#       a raw real-world snapshot, zero modifications.
-#   * anchor + 1 (first future month):
-#       (anchor input − TOTAL annual obligations) + salary − spending
-#       — the future mirror copies the structural obligations hit into
-#         the new timeline so it is never forgotten.
-#   * all later months         : (previous + salary) − spending
+#       raw real-world snapshot (no salary, no spending, no obligations).
+#   * all FUTURE months        : (previous + salary) − spending —
+#       each value depends only on the distance from the anchor month.
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
 if has_anchor:
     prev = float(anchor_balance)          # exactly as typed — untouched
     updated_balances[anchor_idx] = prev
     for i in range(anchor_idx + 1, 24):
-        if i == anchor_idx + 1:
-            prev = (prev - total_obligations) + float(salary) - float(spend_limit)
-        else:
-            prev = (prev + float(salary)) - float(spend_limit)
+        prev = (prev + float(salary)) - float(spend_limit)
         updated_balances[i] = prev
 
 # ---------------------------------------------------------------
@@ -397,8 +400,8 @@ target_label = month_labels[target_idx]
 with status_area:
     if not has_anchor or updated_balances[target_idx] is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — يظهر رصيدك كما هو، "
-            "وتُخصم الالتزامات مع أول شهر تالٍ ثم يستمر المسار حتى محطة مايو."
+            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — يظهر رصيدك كما هو "
+            "في شهره، ويستمر المسار (+ الراتب − حد الصرف) حتى محطة مايو."
         )
     else:
         m_std = standard_balances[target_idx]
