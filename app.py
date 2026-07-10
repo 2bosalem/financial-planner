@@ -1,6 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v18)
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v19)
+  DYNAMIC ACCOUNTING ENGINE — the obligations deduction fires at the
+  LAUNCH ROW of each scenario, wherever that row sits in the grid:
+  * الخطة الأصلية  launch row (شهر البداية):
+        (الرصيد الافتتاحي − total_obligations) + الراتب − حد الصرف
+        then: (previous + الراتب) − حد الصرف
+  * الخطة المحدثة  launch row (الشهر الحالي — ANY position):
+        (الرصيد الفعلي الحالي − total_obligations) + الراتب − حد الصرف
+        then: (previous + الراتب) − حد الصرف — a perfect functional
+        clone of the baseline launch math; rows before the anchor = '—'
+  * total_obligations is summed dynamically from the 4 numeric inputs.
+  * The anchor is an ABSOLUTE calendar month (year, month) — changing
+    شهر البداية can never shift or alter the updated plan.
   CLOUD SYNC (cross-device persistence)
   * All primary inputs are saved to a PRIVATE GitHub Gist (configured via
     Streamlit Secrets: GH_TOKEN + GIST_ID). Mac, iPhone Safari, and the
@@ -12,15 +24,6 @@
   * apple-touch-icon + standalone meta tags are injected BOTH as direct
     HTML markup at the very top of the page AND programmatically into the
     parent <head> (with cache-busting).
-  LOCKED ACCOUNTING ENGINE (two fully independent loops)
-  * الخطة الأصلية : Row 1 = (الرصيد الافتتاحي − total_obligations)
-                            + الراتب − حد الصرف
-                    Row n = (previous + الراتب) − حد الصرف
-  * الخطة المحدثة : rows before الشهر الحالي = '—'
-                    anchor row = الرصيد الفعلي الحالي EXACTLY (raw snapshot)
-                    future rows = (previous + الراتب) − حد الصرف
-                    Anchored by ABSOLUTE calendar month (year, month) —
-                    100% immune to changes in شهر البداية.
   UI
   * Passcode gate "2806", clean sans-serif typography, centered numbers,
     controls → future May milestones → 3-column table → bottom expanders,
@@ -459,7 +462,7 @@ with settings_area:
             salary = st.number_input("الراتب الشهري", min_value=0.0, value=3300.0, step=100.0, key="salary")
             spend_limit = st.number_input("حد الصرف الشهري", min_value=0.0, value=5000.0, step=100.0, key="spend_limit")
 
-    with st.expander("الالتزامات السنوية الأربعة — تُخصم في الشهر الأول من الخطة الأصلية", expanded=False):
+    with st.expander("الالتزامات السنوية الأربعة — تُخصم عند صف الانطلاق في كل خطة", expanded=False):
         default_obligations = [
             ("الالتزام السنوي 1", 7300.0),
             ("الالتزام السنوي 2", 7300.0),
@@ -474,6 +477,7 @@ with settings_area:
                 a_col.number_input(f"المبلغ {i}", min_value=0.0, value=d_amount, step=100.0, key=f"ob_amount_{i}")
             )
 
+# Dynamic sum of the 4 numeric inputs — never hardcoded
 total_obligations = float(sum(obligation_amounts))
 
 # ---------------------------------------------------------------
@@ -514,8 +518,8 @@ with anchor_area:
                 key="anchor_balance",
             )
         st.caption(
-            "يظهر رصيدك كما هو تمامًا في شهره (لقطة واقعية بلا أي تعديل) — "
-            "وتُحفظ مدخلاتك سحابيًا لتظهر متطابقة على جميع أجهزتك."
+            f"صف الانطلاق يُحسب: (رصيدك − الالتزامات {fmt(total_obligations)}) + الراتب − حد الصرف "
+            "أيًا كان موقع شهرك في الجدول — وتُحفظ مدخلاتك متزامنة عبر جميع أجهزتك."
         )
 
 anchor_idx = timeline.index(anchor_month_abs)
@@ -523,7 +527,8 @@ has_anchor = anchor_balance is not None
 
 # ---------------------------------------------------------------
 # Chain 1 — الخطة الأصلية (baseline)
-#   Row 1 : (initial − total_obligations) + salary − spending
+#   Launch row (شهر البداية):
+#       (initial − total_obligations) + salary − spending
 #   Row n : (previous + salary) − spending
 # ---------------------------------------------------------------
 standard_balances = []
@@ -536,14 +541,19 @@ for i in range(24):
     standard_balances.append(prev)
 
 # ---------------------------------------------------------------
-# Chain 2 — الخطة المحدثة (absolute time-anchoring)
+# Chain 2 — الخطة المحدثة (dynamic launch-row engine)
+#   Fully independent loop — reads NOTHING from the baseline chain.
 #   * rows BEFORE the anchor : None → rendered as '—'
-#   * anchor row             : الرصيد الفعلي الحالي EXACTLY as typed
+#   * the anchor LAUNCH row (wherever الشهر الحالي sits in the grid):
+#       (الرصيد الفعلي الحالي − total_obligations) + salary − spending
+#       — the obligations deduction fires HERE, at the dynamic starting
+#         point of the projection, a perfect clone of the baseline's
+#         launch math. It does NOT depend on the row being first.
 #   * all FUTURE rows        : (previous + salary) − spending
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
 if has_anchor:
-    prev = float(anchor_balance)          # raw snapshot — untouched
+    prev = (float(anchor_balance) - total_obligations) + float(salary) - float(spend_limit)
     updated_balances[anchor_idx] = prev
     for i in range(anchor_idx + 1, 24):
         prev = (prev + float(salary)) - float(spend_limit)
@@ -563,8 +573,8 @@ target_label = month_labels[target_idx]
 with status_area:
     if not has_anchor or updated_balances[target_idx] is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — يظهر رصيدك كما هو "
-            "في شهره، ويستمر المسار (+ الراتب − حد الصرف) حتى محطة مايو."
+            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — تُخصم الالتزامات في "
+            "صف الانطلاق نفسه ثم يستمر المسار (+ الراتب − حد الصرف) حتى محطة مايو."
         )
     else:
         m_std = standard_balances[target_idx]
