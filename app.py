@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v16)
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v17)
+  iOS ICON — dual-path enforcement
+  * apple-touch-icon + standalone meta tags are injected BOTH as direct
+    HTML markup at the very top of the page AND programmatically into the
+    parent <head> (with cache-busting), so Safari finds the icon whichever
+    way it scans the DOM when the user taps "Add to Home Screen".
   PERSISTENCE
   * All primary inputs (opening balance, salary, spending limit, currency,
     start month/year, the 4 obligations, current month + actual balance)
     are mirrored into the phone's localStorage via streamlit-js-eval and
     restored automatically on every reload — zero data loss on refresh.
-  iOS APP ASSETS
-  * apple-touch-icon + standalone web-app meta tags are injected into the
-    parent <head>, so "Add to Home Screen" creates a dedicated app icon.
   LOCKED ACCOUNTING ENGINE (two fully independent loops)
   * الخطة الأصلية : Row 1 = (الرصيد الافتتاحي − total_obligations)
                             + الراتب − حد الصرف
@@ -53,23 +55,47 @@ MONTH_NAMES = [
 MAY = 4          # index of مايو
 ACCESS_CODE = "2806"
 STORAGE_KEY = "wealth_terminal_v1"
-APPLE_ICON_URL = "https://raw.githubusercontent.com/2bosalem/financial-planner/main/icon.png"
+# Cache-busted so Safari re-fetches the icon after repo updates
+APPLE_ICON_URL = "https://raw.githubusercontent.com/2bosalem/financial-planner/main/icon.png?v=2"
 
 # ---------------------------------------------------------------
-# iOS home-screen app assets — injected once into the parent <head>
+# iOS icon path 1 — direct HTML markup at the very top of the page.
+# Safari scans the rendered DOM for apple-touch-icon when the user
+# taps "Add to Home Screen", so these tags are emitted immediately.
+# ---------------------------------------------------------------
+st.markdown(
+    f"""
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="منصة الثروة">
+    <link rel="apple-touch-icon" sizes="180x180" href="{APPLE_ICON_URL}">
+    <link rel="apple-touch-icon" href="{APPLE_ICON_URL}">
+    <link rel="apple-touch-icon-precomposed" href="{APPLE_ICON_URL}">
+    """,
+    unsafe_allow_html=True,
+)
+
+# ---------------------------------------------------------------
+# iOS icon path 2 — programmatic injection into the parent <head>
+# (removes any stale tags first, then re-adds with the fresh URL).
 # ---------------------------------------------------------------
 components.html(
     f"""
     <script>
     (function() {{
         const doc = window.parent.document;
-        if (doc.getElementById('ios-touch-icon')) return;
-        const link = doc.createElement('link');
-        link.id = 'ios-touch-icon';
-        link.rel = 'apple-touch-icon';
-        link.sizes = '180x180';
-        link.href = '{APPLE_ICON_URL}';
-        doc.head.appendChild(link);
+        doc.querySelectorAll(
+            'link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]'
+        ).forEach(el => el.remove());
+        const rels = ['apple-touch-icon', 'apple-touch-icon-precomposed'];
+        for (const rel of rels) {{
+            const link = doc.createElement('link');
+            link.rel = rel;
+            link.sizes = '180x180';
+            link.href = '{APPLE_ICON_URL}';
+            doc.head.appendChild(link);
+        }}
         const metas = [
             ['apple-mobile-web-app-capable', 'yes'],
             ['mobile-web-app-capable', 'yes'],
@@ -77,6 +103,7 @@ components.html(
             ['apple-mobile-web-app-title', 'منصة الثروة'],
         ];
         for (const [name, content] of metas) {{
+            if (doc.head.querySelector(`meta[name="${{name}}"]`)) continue;
             const m = doc.createElement('meta');
             m.name = name;
             m.content = content;
