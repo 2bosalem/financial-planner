@@ -1,40 +1,33 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v21 — FINAL)
-  ISOLATED HEDGING DISPLAY (قيمة التحوط) — May cards ONLY
-  * A numeric input "قيمة التحوط (KD)" (default 0.00) sits inside the
-    May Milestones console. EVERY displayed May milestone card
-    (May 2027 AND May 2028) shows, under الخطة المحدثة:
-        Adjusted_Display = Raw_Projected_May_Balance
-                           − (Monthly_Spending_Limit − Hedging_Value)
-    Delta badges (+ emerald / − crimson) and the top narrative banner
-    recalculate from the adjusted values.
-  * CRUCIAL EXCLUSION RULE: presentation-layer only. The 3-column table
-    always shows the pure, unaltered recursive carry-forward balances.
-  * Milestones without data show '—' with "بانتظار التحديث".
-  COMPREHENSIVE LOCAL STORAGE PERSISTENCE (منظومة الحفظ التلقائي)
-  * EVERY interactive input (opening balance, salary, spending limit,
-    start month/year, current month, actual balance, hedging value, and
-    all 4 obligations' names + amounts) is mirrored into the browser's
-    localStorage on every change and auto-restored on boot — session
-    state alone is never relied upon.
-  * Optional cloud layer: when GH_TOKEN + GIST_ID secrets exist, the same
-    payload also syncs through a private GitHub Gist across devices.
-  DYNAMIC ACCOUNTING ENGINE — the obligations deduction fires at the
-  LAUNCH ROW of each scenario, wherever that row sits in the grid:
-  * الخطة الأصلية  launch row (شهر البداية):
-        (الرصيد الافتتاحي − total_obligations) + الراتب − حد الصرف
-        then: (previous + الراتب) − حد الصرف
-  * الخطة المحدثة  launch row (الشهر الحالي — ANY position):
-        (الرصيد الفعلي الحالي − total_obligations) + الراتب − حد الصرف
-        then: (previous + الراتب) − حد الصرف — a perfect functional
-        clone of the baseline launch math; rows before the anchor = '—'
-  * total_obligations is summed dynamically from the 4 numeric inputs.
-  * The anchor is an ABSOLUTE calendar month (year, month) — changing
-    شهر البداية can never shift or alter the updated plan.
-  iOS — passcode gate "2806", apple-touch-icon + standalone meta tags,
-  system typography, centered values, single-viewport layout:
-  inputs → May milestones → 3-column table → bottom expanders.
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v22)
+  MAY CARDS — FORCE RENDERING via DATE-LABEL SEARCH
+  * Milestone rows are located by scanning the timeline for dates whose
+    month name equals "مايو" (e.g. "مايو 2027", "مايو 2028") — never by
+    positional index matching.
+  * Whenever the projected array holds a RAW balance for that calendar
+    month, the card MUST render:
+        Adjusted_Card_Value = Raw_Projected_Balance
+                              − (Monthly_Spending_Limit − Hedging_Value)
+    Delta badges and the top narrative recalculate from this value.
+  * A milestone whose month has no computed balance yet (it precedes the
+    anchor, or الرصيد الفعلي الحالي is empty) shows '—' + "بانتظار التحديث".
+  * EXCLUSION RULE: presentation-layer only — the 3-column table always
+    shows the pure, unadjusted recursive carry-forward balances.
+  COMPREHENSIVE LOCAL STORAGE PERSISTENCE
+  * EVERY input (opening balance, salary, spending limit, start
+    month/year, current month, actual balance, hedging value, 4
+    obligations' names + amounts) mirrors into browser localStorage on
+    every change and auto-restores on boot. Requires streamlit-js-eval
+    in requirements.txt. Optional gist cloud sync on top via secrets.
+  ENGINE — obligations deduction fires at each scenario's LAUNCH ROW:
+  * الخطة الأصلية : (الرصيد الافتتاحي − total_obligations) + الراتب − حد الصرف،
+                    ثم (السابق + الراتب) − حد الصرف
+  * الخطة المحدثة : (الرصيد الفعلي − total_obligations) + الراتب − حد الصرف
+                    عند الشهر الحالي أيًا كان موقعه، ثم التقدم الشهري.
+  * Absolute (year, month) anchoring — شهر البداية cannot shift it.
+  iOS — passcode "2806", apple-touch-icon + standalone tags, system
+  typography, centered, single-viewport packing.
 Arabic RTL.
 """
 
@@ -67,7 +60,6 @@ MONTH_NAMES = [
 MAY = 4          # index of مايو
 ACCESS_CODE = "2806"
 STORAGE_KEY = "wealth_terminal_v1"
-# Cache-busted so Safari re-fetches the icon after repo updates
 APPLE_ICON_URL = "https://raw.githubusercontent.com/2bosalem/financial-planner/main/icon.png?v=2"
 
 # ---------------------------------------------------------------
@@ -386,8 +378,6 @@ if not st.session_state.authenticated:
 
 # ===============================================================
 # PERSISTENCE — LOAD (runs before any widget is created)
-# Primary: browser localStorage (always). Cloud gist takes precedence
-# when configured (cross-device). Widgets auto-populate on boot.
 # ===============================================================
 PERSISTED_WIDGET_KEYS = (
     ["start_month", "start_year", "init_balance", "currency", "salary", "spend_limit",
@@ -547,18 +537,21 @@ if has_anchor:
         updated_balances[i] = prev
 
 # ---------------------------------------------------------------
-# May milestones — FUTURE ONLY (at/after the selected current month)
+# May milestones — DATE-LABEL SEARCH (no positional index matching).
+# The rows are found programmatically by scanning the timeline for
+# dates whose month name equals "مايو" (e.g. "مايو 2027", "مايو 2028").
+# A card renders its adjusted value whenever the projected array holds
+# a RAW balance for that calendar month — wherever it sits.
 # ---------------------------------------------------------------
-all_may_ids = [i for i in range(24) if month_nums[i] == MAY]
-future_may_ids = [i for i in all_may_ids if i >= anchor_idx]
-target_idx = future_may_ids[0] if future_may_ids else all_may_ids[-1]
+may_rows = [i for i in range(24) if month_labels[i].split()[0] == "مايو"]
+valued_may_rows = [i for i in may_rows if updated_balances[i] is not None]
+# Focal milestone for the narrative banner: first May that HAS data,
+# falling back to the first May in the window.
+target_idx = valued_may_rows[0] if valued_may_rows else (may_rows[0] if may_rows else 0)
 target_label = month_labels[target_idx]
 
 # ---------------------------------------------------------------
 # May console frame + HEDGING input (قيمة التحوط)
-# The frame, title and input are created FIRST so the hedging value
-# feeds the executive display math and the status narrative; the
-# milestone cards are appended into the same frame further below.
 # ---------------------------------------------------------------
 with terminal_area:
     may_console = st.container(border=True)
@@ -577,8 +570,8 @@ with terminal_area:
             )
 
 
-# ISOLATED HEDGING DISPLAY — for the May cards ONLY:
-#   Adjusted_Display = Raw_Projected − (Spending Limit − Hedging Value)
+# ISOLATED HEDGING DISPLAY — May cards ONLY:
+#   Adjusted_Card_Value = Raw_Projected − (Spending Limit − Hedging Value)
 # The 3-column table below always stays RAW (exclusion rule).
 raw_target_upd = updated_balances[target_idx]
 adjusted_target_upd = (
@@ -631,15 +624,15 @@ with status_area:
 
 # ---------------------------------------------------------------
 # [MIDDLE] May Milestones cards — appended into the console frame.
-# EVERY card's الخطة المحدثة value is hedging-adjusted; the table
-# below stays raw (exclusion rule).
+# EVERY card renders the adjusted value whenever its raw balance
+# exists; otherwise '—' + "بانتظار التحديث". Table stays raw.
 # ---------------------------------------------------------------
 with may_console:
-    if not future_may_ids:
+    if not may_rows:
         inner = '<div class="may-empty">لا توجد محطات مايو متبقية في نافذة الخطة الحالية.</div>'
     else:
         cells = ""
-        for mi in future_may_ids:
+        for mi in may_rows:
             std_v = standard_balances[mi]
             raw_v = updated_balances[mi]
             # ISOLATED HEDGING DISPLAY — applied to EVERY May card:
@@ -677,15 +670,13 @@ with may_console:
                 f'{chip}'
                 '</div>'
             )
-        cols = len(future_may_ids)
+        cols = len(may_rows)
         inner = f'<div class="may-grid" style="grid-template-columns: repeat({cols}, 1fr);">{cells}</div>'
 
     st.markdown(inner, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------
-# [BELOW] 3-column table: التاريخ | الخطة الأصلية | الخطة المحدثة
-# RAW recursive balances only — the hedging adjustment NEVER
-# reaches these arrays (exclusion rule).
+# [BELOW] 3-column table — RAW recursive balances only.
 # ---------------------------------------------------------------
 with table_area:
     rows = ""
