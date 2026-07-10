@@ -1,29 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v24)
-  THE ISOLATED HEDGING SUMMARY MODULE (منصة أهداف مايو)
-  * Input "قيمة التحوط (KD)" (default 0.00) inside the console.
-  * Two fixed future cards — مايو 2027 & مايو 2028 (past Mays suppressed).
-    Value under الخطة المحدثة in BOTH cards (immediate net liquidity):
-        Adjusted_Card_Display_Value =
-            Current Real Cash Balance − (Monthly Spending Limit − Hedging)
-    Subtext: "الرصيد المحدث المستهدف". Delta badges + narrative banner
-    recalculate from this value vs the baseline for that milestone.
-  * A milestone beyond the 18-month cutoff shows '—' + "بانتظار التحديث".
-  * CRITICAL EXCLUSION LAW: text-only, presentation layer. It never
-    enters any loop — the 3-column table always shows the pure raw
-    recursive carry-forward balances.
-  ABSOLUTE DATA PERSISTENCE
-  * Every input (opening capital, income, spending limit, start
-    month/year, current month, real cash, hedging value, 4 obligations'
-    labels + amounts) mirrors to browser localStorage on change and
-    auto-populates on launch (streamlit-js-eval bridge — must be in
-    requirements.txt). Optional gist cloud sync via secrets.
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v25)
+  THE ISOLATED HEDGING CRADLE (صندوق التحوط المستقل)
+  * A standalone box (separate from the milestone layout) holding ONE
+    input "قيمة التحوط (KD)" (default 0.00) and ONE live readout
+    "الرصيد المستهدف الحالي":
+        Target_Result = Current Real Cash − (Spending Limit − Hedging)
+    The Target_Result lives and dies inside this box — it is NEVER
+    injected into any array, carry-forward loop, baseline column, or
+    data-table cell.
+  RE-ENGINEERED MAY MILESTONE CARD
+  * The upcoming مايو row is located by DATE-LABEL search. The card
+    shows the baseline + the RAW projected balance (extracted directly
+    from that month's row in the lower table), and a variance badge:
+        May_Variance = Target_Result − Raw_Projected_Balance_For_May
+    Green (+) emblem for stability, red (−) for deficit. A milestone
+    beyond the 18-month window shows '—' + "بانتظار التحديث".
+  PERSISTENCE — every input (incl. قيمة التحوط and the 4 obligations)
+  mirrors to browser localStorage on change and auto-restores on boot
+  (streamlit-js-eval bridge — must be in requirements.txt). Optional
+  gist cloud sync via secrets.
   ENGINE — 18-month horizon, launch-row obligations deduction:
-  * الخطة الأصلية : Row 1 = (الرصيد الافتتاحي − total_obligations)
-                    + الراتب − حد الصرف، ثم (السابق + الراتب) − حد الصرف
-  * الخطة المحدثة : anchor row = (الرصيد الفعلي − total_obligations)
-                    + الراتب − حد الصرف، ثم التقدم الشهري حتى نهاية النافذة.
+  * الخطة الأصلية : (الرصيد الافتتاحي − total_obligations) + الراتب − حد الصرف،
+                    ثم (السابق + الراتب) − حد الصرف
+  * الخطة المحدثة : (الرصيد الفعلي − total_obligations) + الراتب − حد الصرف
+                    عند الشهر الحالي، ثم التقدم الشهري حتى نهاية النافذة.
                     Rows before the anchor = '—'.
   * Absolute (year, month) anchoring — شهر البداية cannot shift it.
   iOS — passcode "2806", apple-touch-icon + standalone tags, system
@@ -197,7 +198,7 @@ st.markdown(
     .t-amber { color: #b45309; }
     .t-red   { color: #b91c1c; }
 
-    /* ---------------- May Milestones console ---------------- */
+    /* ---------------- Consoles / cards ---------------- */
     .may-terminal-title {
         text-align: center; font-size: 0.64rem; font-weight: 700;
         color: #94a3b8; letter-spacing: 3px; margin-bottom: 2px;
@@ -419,14 +420,16 @@ if not st.session_state.get("_storage_loaded", False):
 
 # ===============================================================
 # MAIN TERMINAL — strict top-to-bottom sequence:
-#   hero → anchor inputs → status → May console → table → settings
+#   hero → anchor inputs → status → hedging cradle → May card →
+#   table → settings
 # ===============================================================
 st.markdown('<div class="hero">🏦 منصة الثروة الخاصة</div>', unsafe_allow_html=True)
 st.markdown('<div class="hero-sub">PRIVATE WEALTH TERMINAL</div>', unsafe_allow_html=True)
 
 anchor_area = st.container()
 status_area = st.container()
-terminal_area = st.container()
+hedge_area = st.container()        # standalone hedging cradle
+terminal_area = st.container()     # upcoming May milestone card
 table_area = st.container()
 settings_area = st.container()
 
@@ -538,96 +541,88 @@ if has_anchor:
         updated_balances[i] = prev
 
 # ---------------------------------------------------------------
-# May milestones — FIXED FUTURE YEARS ONLY. The two cards are the NEXT
-# two Mays relative to the current month; a past May can never render.
-# Labels are looked up by DATE STRING; a year beyond the 18-month cutoff
-# gracefully shows '—' with "بانتظار التحديث".
+# Upcoming May milestone — located by DATE-LABEL search (never by
+# positional index). A past May can never be selected.
 # ---------------------------------------------------------------
-_anchor_year, _anchor_m = anchor_month_abs          # (year, 0-based month)
-first_may_year = _anchor_year if _anchor_m <= MAY else _anchor_year + 1
-milestone_years = [first_may_year, first_may_year + 1]
-
-may_cards = []                                       # [(year, row_index|None)]
-for _yy in milestone_years:
-    _label = f"مايو {_yy}"
-    may_cards.append((_yy, month_labels.index(_label) if _label in month_labels else None))
-
-# Focal milestone for the narrative banner: the first card that is
-# resolvable inside the 18-month window.
-_resolvable = [idx for (_, idx) in may_cards if idx is not None]
-target_resolved = _resolvable[0] if _resolvable else None
-target_idx = target_resolved if target_resolved is not None else 0
-target_label = (month_labels[target_idx] if target_resolved is not None
-                else f"مايو {milestone_years[0]}")
+_ay, _am = anchor_month_abs                      # (year, 0-based month)
+first_may_year = _ay if _am <= MAY else _ay + 1
+upcoming_label = f"مايو {first_may_year}"
+may_idx = month_labels.index(upcoming_label) if upcoming_label in month_labels else None
+target_label = upcoming_label
 
 # ---------------------------------------------------------------
-# May console frame + HEDGING input (قيمة التحوط)
+# THE ISOLATED HEDGING CRADLE (صندوق التحوط المستقل)
+# One input + one live readout. The Target_Result lives and dies
+# inside this box — it is NEVER injected into any array, loop,
+# baseline column, or data-table cell below.
+#   Target_Result = Current Real Cash − (Spending Limit − Hedging)
 # ---------------------------------------------------------------
-with terminal_area:
-    may_console = st.container(border=True)
-    with may_console:
+with hedge_area:
+    with st.container(border=True):
         st.markdown(
-            '<div class="may-terminal-title">منصة أهداف مايو — MAY MILESTONES</div>',
+            '<div class="may-terminal-title">صندوق التحوط — HEDGING CRADLE</div>',
             unsafe_allow_html=True,
         )
-        _h1, _h2, _h3 = st.columns([1, 1.3, 1])
-        with _h2:
+        _c1, _c2, _c3 = st.columns([1, 1.3, 1])
+        with _c2:
             hedging_value = st.number_input(
                 "قيمة التحوط (KD)",
                 value=0.0,
                 step=50.0,
                 key="hedging_value",
             )
+        target_result = (
+            float(anchor_balance) - (float(spend_limit) - float(hedging_value))
+            if has_anchor else None
+        )
+        if target_result is None:
+            _res_html = ('<div class="may-k">الرصيد المستهدف الحالي</div>'
+                         '<div class="may-v mut">—</div>')
+        else:
+            _cls = "neg" if target_result < 0 else "pos"
+            _res_html = ('<div class="may-k">الرصيد المستهدف الحالي</div>'
+                         f'<div class="may-v {_cls}">{fmt(target_result)} {currency}</div>')
+        st.markdown(f'<div style="text-align:center;">{_res_html}</div>',
+                    unsafe_allow_html=True)
 
-
-# ISOLATED HEDGING DISPLAY — May cards ONLY (immediate net liquidity):
-#   Adjusted_Card_Display_Value =
-#       Current Real Cash Balance − (Monthly Spending Limit − Hedging Value)
-# Purely presentation-layer text for the upper cards; it NEVER enters any
-# other loop — the 3-column table below always stays RAW (exclusion law).
-adjusted_card_value = (
-    float(anchor_balance) - (float(spend_limit) - float(hedging_value))
-    if has_anchor else None
-)
+# Raw projected balance for the upcoming May — extracted directly from
+# that month's row in the lower data table (pure, unadjusted).
+raw_may = updated_balances[may_idx] if may_idx is not None else None
+# Badge formula: May_Variance = Target_Result − Raw_Projected_Balance_For_May
+may_variance = (target_result - raw_may
+                if (target_result is not None and raw_may is not None) else None)
 
 # ---------------------------------------------------------------
-# Status line — narrative recalculated from the adjusted card value
+# Status line — narrative driven by the May variance
 # ---------------------------------------------------------------
 with status_area:
-    if not has_anchor or target_resolved is None:
+    if may_variance is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — تُخصم الالتزامات في "
-            "صف الانطلاق ثم يستمر المسار حتى محطة مايو (مع مراعاة قيمة التحوط)."
+            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — سيُحسب رصيدك المستهدف "
+            f"في صندوق التحوط ويُقارن بتوقع {target_label} تلقائيًا."
         )
     else:
-        m_std = standard_balances[target_idx]
-        m_upd = adjusted_card_value   # hedging-adjusted executive value
-        m_delta = m_upd - m_std
-        _path_vals = [v for v in updated_balances if v is not None]
-        path_min = min(_path_vals) if _path_vals else 0.0
-        if path_min < 0:
-            dot = "dot-red"
-            text = (
-                f'مسارك الحالي يكسر الصفر قبل <span class="status-strong t-red">{target_label}</span> '
-                f'(أدنى نقطة {fmt(path_min)} {currency}) — خفّض الإنفاق الآن.'
-            )
-        elif m_delta >= 0:
+        _ref = max(abs(raw_may), 1.0)
+        if may_variance >= 0:
             dot = "dot-green"
             text = (
-                f'أنت على المسار الصحيح — سيولتك الصافية <span class="status-strong">{fmt(m_upd)} {currency}</span>'
-                f'، بفائض <span class="status-strong t-green">+{fmt(m_delta)}</span> عن خطة {target_label}.'
+                f'استقرار إيجابي — رصيدك المستهدف <span class="status-strong">{fmt(target_result)} {currency}</span> '
+                f'يتقدم على توقع {target_label} ({fmt(raw_may)}) بفارق '
+                f'<span class="status-strong t-green">+{fmt(may_variance)}</span>.'
             )
-        elif abs(m_delta) <= 0.10 * max(abs(m_std), 1.0):
+        elif abs(may_variance) <= 0.10 * _ref:
             dot = "dot-amber"
             text = (
-                f'انحراف بسيط — سيولتك الصافية {fmt(m_upd)} {currency} مقابل خطة {target_label} '
-                f'{fmt(m_std)} (<span class="status-strong t-amber">−{fmt(abs(m_delta))}</span>). قابل للتصحيح.'
+                f'انحراف بسيط — رصيدك المستهدف {fmt(target_result)} {currency} أدنى من توقع '
+                f'{target_label} ({fmt(raw_may)}) بمقدار '
+                f'<span class="status-strong t-amber">−{fmt(abs(may_variance))}</span>. قابل للتصحيح.'
             )
         else:
             dot = "dot-red"
             text = (
-                f'تراجع واضح — سيولتك الصافية {fmt(m_upd)} {currency} مقابل خطة {target_label} '
-                f'{fmt(m_std)} (<span class="status-strong t-red">−{fmt(abs(m_delta))}</span>). قلّل الصرف اليومي.'
+                f'عجز واضح — رصيدك المستهدف {fmt(target_result)} {currency} أدنى من توقع '
+                f'{target_label} ({fmt(raw_may)}) بمقدار '
+                f'<span class="status-strong t-red">−{fmt(abs(may_variance))}</span>. قلّل الصرف اليومي.'
             )
     st.markdown(
         f'<div class="status-card"><span class="status-dot {dot}"></span>{text}</div>',
@@ -635,56 +630,53 @@ with status_area:
     )
 
 # ---------------------------------------------------------------
-# [MIDDLE] May Milestones cards — the two fixed future-year slots.
+# [MIDDLE] Re-engineered upcoming May milestone card:
+#   base metrics on one side, variance badge on the other.
 # ---------------------------------------------------------------
-with may_console:
-    cells = ""
-    for _yy, mi in may_cards:
-        # Resolve baseline by looked-up row; None when the year lies
-        # beyond the window cutoff (graceful "بانتظار التحديث").
-        std_v = standard_balances[mi] if mi is not None else None
-        # ISOLATED HEDGING DISPLAY — identical in both future cards:
-        #   Current Real Cash − (Spending Limit − Hedging Value)
-        # Rendered only when the milestone year is inside the 18-month
-        # window AND the current balance is entered (exclusion law:
-        # the table below never sees this value).
-        upd_v = adjusted_card_value if (mi is not None and has_anchor) else None
-        sub_note = ('<div class="may-k">الرصيد المحدث المستهدف</div>'
-                    if upd_v is not None else "")
-        if std_v is None:
-            std_html = '<div class="may-v mut">—</div>'
-        else:
-            std_cls = "neg" if std_v < 0 else ""
-            std_html = f'<div class="may-v {std_cls}">{fmt(std_v)}</div>'
-        if upd_v is None:
-            upd_html = '<div class="may-v mut">—</div>'
-            chip = '<span class="delta-chip chip-mut">بانتظار التحديث</span>'
-        else:
-            upd_cls = "neg" if upd_v < 0 else "pos"
-            upd_html = f'<div class="may-v {upd_cls}">{fmt(upd_v)}</div>'
-            delta = upd_v - std_v
-            if delta >= 0:
-                chip = f'<span class="delta-chip chip-pos">فائض +{fmt(delta)} {currency}</span>'
-            else:
-                chip = f'<span class="delta-chip chip-neg">عجز −{fmt(abs(delta))} {currency}</span>'
-        # Compact single-line HTML — newline-free so Markdown can never
-        # split the block into a literal code dump mid-render.
-        cells += (
-            '<div class="may-cell">'
-            f'<div class="may-year">مايو {_yy}</div>'
-            '<div class="may-item">'
-            '<div class="may-k">الخطة الأصلية</div>'
-            f'{std_html}'
-            '</div>'
-            '<div class="may-item">'
-            '<div class="may-k">الخطة المحدثة</div>'
-            f'{upd_html}{sub_note}'
-            '</div>'
-            f'{chip}'
-            '</div>'
+with terminal_area:
+    with st.container(border=True):
+        st.markdown(
+            f'<div class="may-terminal-title">المحطة القادمة — {target_label}</div>',
+            unsafe_allow_html=True,
         )
-    inner = f'<div class="may-grid" style="grid-template-columns: repeat({len(may_cards)}, 1fr);">{cells}</div>'
-    st.markdown(inner, unsafe_allow_html=True)
+        if may_idx is None:
+            card_html = ('<div class="may-empty">—<br>بانتظار التحديث '
+                         '(خارج نافذة الـ 18 شهرًا)</div>')
+        else:
+            std_v = standard_balances[may_idx]
+            std_cls = "neg" if std_v < 0 else ""
+            raw_html = ('<div class="may-v mut">—</div>' if raw_may is None
+                        else f'<div class="may-v {"neg" if raw_may < 0 else ""}">{fmt(raw_may)}</div>')
+            if may_variance is None:
+                badge_val = '<div class="may-v mut">—</div>'
+                badge_chip = '<span class="delta-chip chip-mut">بانتظار التحديث</span>'
+            elif may_variance >= 0:
+                badge_val = f'<div class="may-v pos">+{fmt(may_variance)}</div>'
+                badge_chip = f'<span class="delta-chip chip-pos">استقرار +{fmt(may_variance)} {currency}</span>'
+            else:
+                badge_val = f'<div class="may-v neg">−{fmt(abs(may_variance))}</div>'
+                badge_chip = f'<span class="delta-chip chip-neg">عجز −{fmt(abs(may_variance))} {currency}</span>'
+            # Compact single-line HTML — newline-free (markdown-safe).
+            card_html = (
+                '<div class="may-grid" style="grid-template-columns: 1.35fr 1fr;">'
+                '<div class="may-cell">'
+                '<div class="may-item">'
+                '<div class="may-k">الخطة الأصلية</div>'
+                f'<div class="may-v {std_cls}">{fmt(std_v)}</div>'
+                '</div>'
+                '<div class="may-item">'
+                '<div class="may-k">الخطة المحدثة (خام من الجدول)</div>'
+                f'{raw_html}'
+                '</div>'
+                '</div>'
+                '<div class="may-cell" style="display:flex;flex-direction:column;justify-content:center;">'
+                '<div class="may-k">الفرق: المستهدف − المحدث</div>'
+                f'{badge_val}'
+                f'{badge_chip}'
+                '</div>'
+                '</div>'
+            )
+        st.markdown(card_html, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------
 # [BELOW] 3-column table — RAW recursive balances only (18 rows).
