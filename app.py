@@ -1,31 +1,40 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v15)
-  ABSOLUTE MATH RULES — two fully independent calculation loops.
-  Both scenarios execute the SAME conservative launch formula at their
-  own launch row, so the obligations deduction can never be skipped:
-  * الخطة الأصلية (launch row = شهر البداية):
-      Row 1   = (الرصيد الافتتاحي − total_obligations) + الراتب − حد الصرف
-                e.g. August 2026: (80410 − 29200) + 3300 − 5000 = 49510
-      Row n   = (previous + الراتب) − حد الصرف
-  * الخطة المحدثة (launch row = الشهر الحالي, wherever it sits):
-      Anchor row    = (الرصيد الفعلي الحالي − total_obligations)
-                      + الراتب − حد الصرف
-                      — the deduction fires EXACTLY at the user's
-                      real-world launch row, mirroring the baseline math,
-                      regardless of the row's position in the grid.
-      Future rows   = (previous + الراتب) − حد الصرف
-      Rows before the anchor = '—'.
-      The anchor is stored as an ABSOLUTE calendar month (year + month),
-      never a row index — 100% immune to changes in شهر البداية.
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v16)
+  PERSISTENCE
+  * All primary inputs (opening balance, salary, spending limit, currency,
+    start month/year, the 4 obligations, current month + actual balance)
+    are mirrored into the phone's localStorage via streamlit-js-eval and
+    restored automatically on every reload — zero data loss on refresh.
+  iOS APP ASSETS
+  * apple-touch-icon + standalone web-app meta tags are injected into the
+    parent <head>, so "Add to Home Screen" creates a dedicated app icon.
+  LOCKED ACCOUNTING ENGINE (two fully independent loops)
+  * الخطة الأصلية : Row 1 = (الرصيد الافتتاحي − total_obligations)
+                            + الراتب − حد الصرف
+                    Row n = (previous + الراتب) − حد الصرف
+  * الخطة المحدثة : rows before الشهر الحالي = '—'
+                    anchor row = الرصيد الفعلي الحالي EXACTLY (raw snapshot)
+                    future rows = (previous + الراتب) − حد الصرف
+                    Anchored by ABSOLUTE calendar month (year, month) —
+                    100% immune to changes in شهر البداية.
   UI
-  * Passcode gate "2806", Apple system font, centered numbers,
-    inputs on top → status → May console (future only) → table →
-    collapsed expanders at the very bottom, single-screen fit.
+  * Passcode gate "2806", clean sans-serif typography, centered numbers,
+    controls → future May milestones → 3-column table → bottom expanders,
+    single-screen iPhone fit.
 Arabic RTL.
 """
 
+import json
+
 import streamlit as st
+import streamlit.components.v1 as components
+
+try:
+    from streamlit_js_eval import streamlit_js_eval
+    HAS_STORAGE = True
+except Exception:
+    HAS_STORAGE = False   # app still works; values just won't persist
 
 # ---------------------------------------------------------------
 # Page configuration
@@ -43,9 +52,44 @@ MONTH_NAMES = [
 ]
 MAY = 4          # index of مايو
 ACCESS_CODE = "2806"
+STORAGE_KEY = "wealth_terminal_v1"
+APPLE_ICON_URL = "https://raw.githubusercontent.com/2bosalem/financial-planner/main/icon.png"
 
 # ---------------------------------------------------------------
-# CSS — Apple system typography, compressed zero-scroll spacing,
+# iOS home-screen app assets — injected once into the parent <head>
+# ---------------------------------------------------------------
+components.html(
+    f"""
+    <script>
+    (function() {{
+        const doc = window.parent.document;
+        if (doc.getElementById('ios-touch-icon')) return;
+        const link = doc.createElement('link');
+        link.id = 'ios-touch-icon';
+        link.rel = 'apple-touch-icon';
+        link.sizes = '180x180';
+        link.href = '{APPLE_ICON_URL}';
+        doc.head.appendChild(link);
+        const metas = [
+            ['apple-mobile-web-app-capable', 'yes'],
+            ['mobile-web-app-capable', 'yes'],
+            ['apple-mobile-web-app-status-bar-style', 'default'],
+            ['apple-mobile-web-app-title', 'منصة الثروة'],
+        ];
+        for (const [name, content] of metas) {{
+            const m = doc.createElement('meta');
+            m.name = name;
+            m.content = content;
+            doc.head.appendChild(m);
+        }}
+    }})();
+    </script>
+    """,
+    height=0,
+)
+
+# ---------------------------------------------------------------
+# CSS — clean system typography, compressed zero-scroll spacing,
 # self-contained blocks. Native widgets stay with config.toml theme.
 # ---------------------------------------------------------------
 st.markdown(
@@ -73,6 +117,8 @@ st.markdown(
     [data-testid="stVerticalBlock"] { gap: 0.5rem; }
     [data-testid="stHorizontalBlock"] { gap: 0.6rem; }
     header[data-testid="stHeader"] { height: 1.2rem; background: transparent; }
+    /* Collapse the zero-height component iframes so they leave no gap */
+    [data-testid="stElementContainer"]:has(iframe[height="0"]) { display: none; }
 
     /* Widgets: spacing + centered values only */
     label[data-testid="stWidgetLabel"] p { font-size: 0.74rem; font-weight: 600; }
@@ -256,6 +302,34 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ===============================================================
+# PERSISTENCE — LOAD (runs before any widget is created)
+# Reads the saved JSON blob from the phone's localStorage and seeds
+# st.session_state so every widget opens on the user's last numbers.
+# ===============================================================
+PERSISTED_WIDGET_KEYS = (
+    ["start_month", "start_year", "init_balance", "currency", "salary", "spend_limit", "anchor_balance"]
+    + [f"ob_name_{i}" for i in range(1, 5)]
+    + [f"ob_amount_{i}" for i in range(1, 5)]
+)
+
+if HAS_STORAGE and not st.session_state.get("_storage_loaded", False):
+    _raw = streamlit_js_eval(
+        js_expressions=f"localStorage.getItem('{STORAGE_KEY}')",
+        key="_ls_read",
+    )
+    if _raw:
+        try:
+            _saved = json.loads(_raw)
+            for _k in PERSISTED_WIDGET_KEYS:
+                if _k in _saved:
+                    st.session_state[_k] = _saved[_k]
+            if isinstance(_saved.get("anchor_abs_month"), list):
+                st.session_state["anchor_abs_month"] = tuple(_saved["anchor_abs_month"])
+        except Exception:
+            pass
+        st.session_state["_storage_loaded"] = True
+
+# ===============================================================
 # MAIN TERMINAL — strict top-to-bottom sequence:
 #   hero → anchor inputs → status → May console → table → settings
 # (settings execute first in code so values feed every block,
@@ -272,8 +346,6 @@ settings_area = st.container()
 
 # ---------------------------------------------------------------
 # Settings (bottom of page visually, executed first for values)
-# Defaults reflect the real plan: August 2026 start, 80,410 opening
-# balance, 3,300 salary, 5,000 spending limit, 29,200 obligations.
 # ---------------------------------------------------------------
 with settings_area:
     with st.expander("الإعدادات الأساسية", expanded=False):
@@ -293,7 +365,7 @@ with settings_area:
             salary = st.number_input("الراتب الشهري", min_value=0.0, value=3300.0, step=100.0, key="salary")
             spend_limit = st.number_input("حد الصرف الشهري", min_value=0.0, value=5000.0, step=100.0, key="spend_limit")
 
-    with st.expander("الالتزامات السنوية الأربعة — تُخصم عند صف الانطلاق في كل سيناريو", expanded=False):
+    with st.expander("الالتزامات السنوية الأربعة — تُخصم في الشهر الأول من الخطة الأصلية", expanded=False):
         default_obligations = [
             ("الالتزام السنوي 1", 7300.0),
             ("الالتزام السنوي 2", 7300.0),
@@ -321,12 +393,15 @@ for i in range(24):
     month_labels.append(f"{MONTH_NAMES[m]} {y}")
     month_nums.append(m)
 
+# Restored/previous anchor may fall outside a re-based window — reset safely
+if st.session_state.get("anchor_abs_month") not in timeline:
+    st.session_state["anchor_abs_month"] = timeline[0]
+
 # ---------------------------------------------------------------
 # [TOP] Current Status Update — anchor inputs
-# The anchor selection is an ABSOLUTE calendar month (year, month),
-# NOT a row index — changing شهر البداية re-positions the rows but the
-# anchor stays pinned to the same real-world month, so الخطة المحدثة
-# never shifts.
+# The anchor is an ABSOLUTE calendar month (year, month), NOT a row
+# index — changing شهر البداية re-positions rows but the anchor stays
+# pinned to the same real-world month, so الخطة المحدثة never shifts.
 # ---------------------------------------------------------------
 with anchor_area:
     with st.container(border=True):
@@ -348,8 +423,8 @@ with anchor_area:
                 key="anchor_balance",
             )
         st.caption(
-            f"صف الانطلاق يُحسب: (رصيدك − الالتزامات {fmt(total_obligations)}) + الراتب − حد الصرف — "
-            "نقطة ارتساء زمنية مطلقة لا تتأثر بتغيير شهر بداية الخطة."
+            "يظهر رصيدك كما هو تمامًا في شهره (لقطة واقعية بلا أي تعديل) — "
+            "وتُحفظ كل مدخلاتك تلقائيًا على جهازك ضد التصفير."
         )
 
 anchor_idx = timeline.index(anchor_month_abs)
@@ -371,20 +446,16 @@ for i in range(24):
     standard_balances.append(prev)
 
 # ---------------------------------------------------------------
-# Chain 2 — الخطة المحدثة (absolute time-anchoring, mirrored launch)
-#   Fully independent loop — reads NOTHING from the baseline chain and
-#   depends only on the anchor month's absolute position in time.
+# Chain 2 — الخطة المحدثة (absolute time-anchoring)
+#   Fully independent loop — reads NOTHING from the baseline chain.
 #   * rows BEFORE the anchor : None → rendered as '—'
-#   * the anchor (launch) row:
-#       (الرصيد الفعلي الحالي − total_obligations) + salary − spending
-#       — the obligations deduction fires EXACTLY here, at the user's
-#         real-world launch row, mirroring the baseline's Row-1 math,
-#         no matter where this row sits in the grid.
+#   * anchor row             : الرصيد الفعلي الحالي EXACTLY as typed —
+#       raw real-world snapshot, zero modifications.
 #   * all FUTURE rows        : (previous + salary) − spending
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
 if has_anchor:
-    prev = (float(anchor_balance) - total_obligations) + float(salary) - float(spend_limit)
+    prev = float(anchor_balance)          # raw snapshot — untouched
     updated_balances[anchor_idx] = prev
     for i in range(anchor_idx + 1, 24):
         prev = (prev + float(salary)) - float(spend_limit)
@@ -404,8 +475,8 @@ target_label = month_labels[target_idx]
 with status_area:
     if not has_anchor or updated_balances[target_idx] is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — تُخصم الالتزامات في "
-            "صف الانطلاق نفسه ثم يستمر المسار (+ الراتب − حد الصرف) حتى محطة مايو."
+            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — يظهر رصيدك كما هو "
+            "في شهره، ويستمر المسار (+ الراتب − حد الصرف) حتى محطة مايو."
         )
     else:
         m_std = standard_balances[target_idx]
@@ -539,4 +610,29 @@ with table_area:
         </div>
         """,
         unsafe_allow_html=True,
+    )
+
+# ===============================================================
+# PERSISTENCE — SAVE (runs after all inputs are known)
+# Mirrors the current inputs into localStorage on every change.
+# ===============================================================
+if HAS_STORAGE:
+    _payload = {
+        "start_month": int(start_month),
+        "start_year": int(start_year),
+        "init_balance": float(initial_balance),
+        "currency": currency,
+        "salary": float(salary),
+        "spend_limit": float(spend_limit),
+        "anchor_abs_month": list(anchor_month_abs),
+        "anchor_balance": float(anchor_balance) if has_anchor else None,
+    }
+    for i in range(1, 5):
+        _payload[f"ob_name_{i}"] = st.session_state.get(f"ob_name_{i}", "")
+        _payload[f"ob_amount_{i}"] = float(st.session_state.get(f"ob_amount_{i}", 0.0))
+
+    _payload_js = json.dumps(json.dumps(_payload, ensure_ascii=False))
+    streamlit_js_eval(
+        js_expressions=f"localStorage.setItem('{STORAGE_KEY}', {_payload_js})",
+        key="_ls_write",
     )
