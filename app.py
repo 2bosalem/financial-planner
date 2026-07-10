@@ -1,32 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v25)
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v26)
+  DESIGN PASS — professional visibility upgrade:
+  * Variance box removed from the May card (per design decision); the
+    tinted status banner carries the Target-vs-Projected comparison.
+  * State-tinted status banner (green/amber/red/blue), hero result pill
+    in the hedging cradle, larger high-contrast metrics, zebra table
+    with stronger header band and deeper row highlights.
   THE ISOLATED HEDGING CRADLE (صندوق التحوط المستقل)
-  * A standalone box (separate from the milestone layout) holding ONE
-    input "قيمة التحوط (KD)" (default 0.00) and ONE live readout
-    "الرصيد المستهدف الحالي":
+  * One input "قيمة التحوط (KD)" + one readout "الرصيد المستهدف الحالي":
         Target_Result = Current Real Cash − (Spending Limit − Hedging)
-    The Target_Result lives and dies inside this box — it is NEVER
-    injected into any array, carry-forward loop, baseline column, or
-    data-table cell.
-  RE-ENGINEERED MAY MILESTONE CARD
-  * The upcoming مايو row is located by DATE-LABEL search. The card
-    shows the baseline + the RAW projected balance (extracted directly
-    from that month's row in the lower table), and a variance badge:
-        May_Variance = Target_Result − Raw_Projected_Balance_For_May
-    Green (+) emblem for stability, red (−) for deficit. A milestone
-    beyond the 18-month window shows '—' + "بانتظار التحديث".
+    Box-only value — never injected into any array, loop, or table cell.
+  UPCOMING MAY MILESTONE CARD — located by DATE-LABEL search; shows the
+  baseline and the RAW projected balance extracted from the table row.
+  Beyond the 18-month window: '—' + "بانتظار التحديث".
   PERSISTENCE — every input (incl. قيمة التحوط and the 4 obligations)
   mirrors to browser localStorage on change and auto-restores on boot
-  (streamlit-js-eval bridge — must be in requirements.txt). Optional
-  gist cloud sync via secrets.
-  ENGINE — 18-month horizon, launch-row obligations deduction:
-  * الخطة الأصلية : (الرصيد الافتتاحي − total_obligations) + الراتب − حد الصرف،
-                    ثم (السابق + الراتب) − حد الصرف
-  * الخطة المحدثة : (الرصيد الفعلي − total_obligations) + الراتب − حد الصرف
-                    عند الشهر الحالي، ثم التقدم الشهري حتى نهاية النافذة.
-                    Rows before the anchor = '—'.
-  * Absolute (year, month) anchoring — شهر البداية cannot shift it.
+  (streamlit-js-eval — required in requirements.txt). Optional gist sync.
+  ENGINE — 18-month horizon, launch-row obligations deduction, absolute
+  (year, month) anchoring; the table shows pure recursive balances only.
   iOS — passcode "2806", apple-touch-icon + standalone tags, system
   typography, strict center alignment, single-viewport packing.
 Arabic RTL. All values in KD.
@@ -119,7 +111,8 @@ components.html(
 )
 
 # ---------------------------------------------------------------
-# CSS — clean system typography, compressed zero-scroll spacing.
+# CSS — professional visibility pass: high-contrast typography,
+# tinted status states, hero pill, zebra table.
 # ---------------------------------------------------------------
 st.markdown(
     """
@@ -173,18 +166,33 @@ st.markdown(
     .gate-title { text-align: center; font-size: 1.02rem; font-weight: 700; color: #0f172a; margin: 0; }
     .gate-sub { text-align: center; font-size: 0.72rem; color: #94a3b8; margin: 2px 0 10px 0; }
 
-    /* ---------------- Status line ---------------- */
+    /* ---------------- Status line (state-tinted) ---------------- */
     .status-card {
         background: #f8f9fa;
         border: 1px solid #e2e8f0;
         border-radius: 14px;
         padding: 9px 14px;
         text-align: center;
-        font-size: 0.78rem;
+        font-size: 0.82rem;
         font-weight: 600;
         color: #0f172a;
         line-height: 1.65;
     }
+    .status-card.st-green { background: #ecfdf5; border-color: #a7f3d0; }
+    .status-card.st-amber { background: #fffbeb; border-color: #fde68a; }
+    .status-card.st-red   { background: #fef2f2; border-color: #fecaca; }
+    .status-card.st-info  { background: #eff6ff; border-color: #bfdbfe; }
+
+    /* Hedging cradle result pill — the hero number of the dashboard */
+    .hedge-pill {
+        display: inline-block; direction: ltr;
+        font-size: 1.5rem; font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        padding: 4px 26px; border-radius: 14px;
+        background: #ecfdf5; border: 1px solid #a7f3d0; color: #047857;
+    }
+    .hedge-pill.neg { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .hedge-pill.mut { background: #f1f5f9; border-color: #e2e8f0; color: #94a3b8; }
     .status-dot {
         display: inline-block; width: 8px; height: 8px;
         border-radius: 50%; margin-left: 7px; vertical-align: 1px;
@@ -200,8 +208,8 @@ st.markdown(
 
     /* ---------------- Consoles / cards ---------------- */
     .may-terminal-title {
-        text-align: center; font-size: 0.64rem; font-weight: 700;
-        color: #94a3b8; letter-spacing: 3px; margin-bottom: 2px;
+        text-align: center; font-size: 0.72rem; font-weight: 800;
+        color: #64748b; letter-spacing: 3px; margin-bottom: 8px;
     }
     .may-grid { display: grid; gap: 10px; }
     .may-cell {
@@ -216,9 +224,9 @@ st.markdown(
         margin-bottom: 7px; letter-spacing: 0.3px;
     }
     .may-item { margin-bottom: 6px; }
-    .may-k { font-size: 0.6rem; color: #94a3b8; font-weight: 600; margin-bottom: 1px; }
+    .may-k { font-size: 0.68rem; color: #64748b; font-weight: 700; margin-bottom: 2px; }
     .may-v {
-        font-size: 1.16rem; font-weight: 800; color: #0f172a;
+        font-size: 1.35rem; font-weight: 800; color: #0b1220;
         direction: ltr; text-align: center; line-height: 1.2;
         font-variant-numeric: tabular-nums;
     }
@@ -238,7 +246,7 @@ st.markdown(
         text-align: center; font-size: 0.74rem; color: #94a3b8; padding: 6px 0;
     }
 
-    /* ---------------- Data table ---------------- */
+    /* ---------------- Data table (visibility upgrade) ---------------- */
     .tbl-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
@@ -247,31 +255,32 @@ st.markdown(
         overflow-y: auto;
     }
     table.wtable {
-        width: 100%; border-collapse: collapse; font-size: 0.76rem;
+        width: 100%; border-collapse: collapse; font-size: 0.8rem;
         font-variant-numeric: tabular-nums;
     }
     table.wtable th {
         position: sticky; top: 0; z-index: 1;
-        background: #f8f9fa;
-        color: #94a3b8;
-        font-size: 0.64rem; font-weight: 700; letter-spacing: 0.5px;
-        padding: 8px 6px 6px 6px;
+        background: #eef2f7;
+        color: #475569;
+        font-size: 0.68rem; font-weight: 800; letter-spacing: 0.5px;
+        padding: 9px 6px 7px 6px;
         text-align: center;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 2px solid #dbe2ec;
     }
     table.wtable td {
-        padding: 5px 6px;
+        padding: 7px 6px;
         text-align: center;
-        color: #0f172a;
-        border-bottom: 1px solid #f1f5f9;
+        color: #0b1220;
+        border-bottom: 1px solid #eef1f6;
     }
+    table.wtable tr:nth-child(even) td { background: #f8fafc; }
     table.wtable td.num { direction: ltr; font-weight: 600; }
     table.wtable td.mut { color: #cbd5e1; font-weight: 400; }
     table.wtable td.neg { color: #b91c1c; font-weight: 700; }
 
     /* May rows — champagne gold, bold */
     table.wtable tr.may-row td {
-        background: rgba(212, 180, 96, 0.14);
+        background: rgba(212, 180, 96, 0.22);
         font-weight: 700;
         border-top: 1px solid rgba(212, 180, 96, 0.45);
         border-bottom: 1px solid rgba(212, 180, 96, 0.45);
@@ -279,7 +288,7 @@ st.markdown(
 
     /* Anchor row — soft blue, declared last so it wins over May */
     table.wtable tr.anchor-row td {
-        background: rgba(37, 99, 235, 0.08);
+        background: rgba(37, 99, 235, 0.12);
         font-weight: 700;
         border-top: 1.5px solid #2563eb;
         border-bottom: 1.5px solid #2563eb;
@@ -552,10 +561,8 @@ target_label = upcoming_label
 
 # ---------------------------------------------------------------
 # THE ISOLATED HEDGING CRADLE (صندوق التحوط المستقل)
-# One input + one live readout. The Target_Result lives and dies
-# inside this box — it is NEVER injected into any array, loop,
-# baseline column, or data-table cell below.
 #   Target_Result = Current Real Cash − (Spending Limit − Hedging)
+# Box-only value — never injected into any array, loop, or table cell.
 # ---------------------------------------------------------------
 with hedge_area:
     with st.container(border=True):
@@ -576,24 +583,25 @@ with hedge_area:
             if has_anchor else None
         )
         if target_result is None:
-            _res_html = ('<div class="may-k">الرصيد المستهدف الحالي</div>'
-                         '<div class="may-v mut">—</div>')
+            _pill = '<span class="hedge-pill mut">—</span>'
         else:
-            _cls = "neg" if target_result < 0 else "pos"
-            _res_html = ('<div class="may-k">الرصيد المستهدف الحالي</div>'
-                         f'<div class="may-v {_cls}">{fmt(target_result)} {currency}</div>')
-        st.markdown(f'<div style="text-align:center;">{_res_html}</div>',
-                    unsafe_allow_html=True)
+            _pill_cls = "neg" if target_result < 0 else ""
+            _pill = f'<span class="hedge-pill {_pill_cls}">{fmt(target_result)} {currency}</span>'
+        st.markdown(
+            '<div style="text-align:center;">'
+            '<div class="may-k">الرصيد المستهدف الحالي</div>'
+            f'{_pill}</div>',
+            unsafe_allow_html=True,
+        )
 
 # Raw projected balance for the upcoming May — extracted directly from
 # that month's row in the lower data table (pure, unadjusted).
 raw_may = updated_balances[may_idx] if may_idx is not None else None
-# Badge formula: May_Variance = Target_Result − Raw_Projected_Balance_For_May
 may_variance = (target_result - raw_may
                 if (target_result is not None and raw_may is not None) else None)
 
 # ---------------------------------------------------------------
-# Status line — narrative driven by the May variance
+# Status line — narrative driven by the May variance (state-tinted)
 # ---------------------------------------------------------------
 with status_area:
     if may_variance is None:
@@ -624,14 +632,14 @@ with status_area:
                 f'{target_label} ({fmt(raw_may)}) بمقدار '
                 f'<span class="status-strong t-red">−{fmt(abs(may_variance))}</span>. قلّل الصرف اليومي.'
             )
+    _tint = dot.replace("dot-", "st-")
     st.markdown(
-        f'<div class="status-card"><span class="status-dot {dot}"></span>{text}</div>',
+        f'<div class="status-card {_tint}"><span class="status-dot {dot}"></span>{text}</div>',
         unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------
-# [MIDDLE] Re-engineered upcoming May milestone card:
-#   base metrics on one side, variance badge on the other.
+# [MIDDLE] Upcoming May milestone card — two clean metric cells.
 # ---------------------------------------------------------------
 with terminal_area:
     with st.container(border=True):
@@ -647,32 +655,17 @@ with terminal_area:
             std_cls = "neg" if std_v < 0 else ""
             raw_html = ('<div class="may-v mut">—</div>' if raw_may is None
                         else f'<div class="may-v {"neg" if raw_may < 0 else ""}">{fmt(raw_may)}</div>')
-            if may_variance is None:
-                badge_val = '<div class="may-v mut">—</div>'
-                badge_chip = '<span class="delta-chip chip-mut">بانتظار التحديث</span>'
-            elif may_variance >= 0:
-                badge_val = f'<div class="may-v pos">+{fmt(may_variance)}</div>'
-                badge_chip = f'<span class="delta-chip chip-pos">استقرار +{fmt(may_variance)} {currency}</span>'
-            else:
-                badge_val = f'<div class="may-v neg">−{fmt(abs(may_variance))}</div>'
-                badge_chip = f'<span class="delta-chip chip-neg">عجز −{fmt(abs(may_variance))} {currency}</span>'
-            # Compact single-line HTML — newline-free (markdown-safe).
+            # Two clean metric cells only — the variance box was removed by
+            # design decision; the top status banner carries the comparison.
             card_html = (
-                '<div class="may-grid" style="grid-template-columns: 1.35fr 1fr;">'
+                '<div class="may-grid" style="grid-template-columns: 1fr 1fr;">'
                 '<div class="may-cell">'
-                '<div class="may-item">'
                 '<div class="may-k">الخطة الأصلية</div>'
                 f'<div class="may-v {std_cls}">{fmt(std_v)}</div>'
                 '</div>'
-                '<div class="may-item">'
+                '<div class="may-cell">'
                 '<div class="may-k">الخطة المحدثة (خام من الجدول)</div>'
                 f'{raw_html}'
-                '</div>'
-                '</div>'
-                '<div class="may-cell" style="display:flex;flex-direction:column;justify-content:center;">'
-                '<div class="may-k">الفرق: المستهدف − المحدث</div>'
-                f'{badge_val}'
-                f'{badge_chip}'
                 '</div>'
                 '</div>'
             )
