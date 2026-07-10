@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v17)
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v18)
+  CLOUD SYNC (cross-device persistence)
+  * All primary inputs are saved to a PRIVATE GitHub Gist (configured via
+    Streamlit Secrets: GH_TOKEN + GIST_ID). Mac, iPhone Safari, and the
+    home-screen app all read/write the SAME data — identical numbers on
+    every device, and nothing is lost when iOS clears browser storage.
+  * If the secrets are not configured, the app automatically falls back
+    to device-local storage (streamlit-js-eval / localStorage).
   iOS ICON — dual-path enforcement
   * apple-touch-icon + standalone meta tags are injected BOTH as direct
     HTML markup at the very top of the page AND programmatically into the
-    parent <head> (with cache-busting), so Safari finds the icon whichever
-    way it scans the DOM when the user taps "Add to Home Screen".
-  PERSISTENCE
-  * All primary inputs (opening balance, salary, spending limit, currency,
-    start month/year, the 4 obligations, current month + actual balance)
-    are mirrored into the phone's localStorage via streamlit-js-eval and
-    restored automatically on every reload — zero data loss on refresh.
+    parent <head> (with cache-busting).
   LOCKED ACCOUNTING ENGINE (two fully independent loops)
   * الخطة الأصلية : Row 1 = (الرصيد الافتتاحي − total_obligations)
                             + الراتب − حد الصرف
@@ -29,6 +30,7 @@ Arabic RTL.
 
 import json
 
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -36,7 +38,7 @@ try:
     from streamlit_js_eval import streamlit_js_eval
     HAS_STORAGE = True
 except Exception:
-    HAS_STORAGE = False   # app still works; values just won't persist
+    HAS_STORAGE = False   # local fallback unavailable; cloud sync may still work
 
 # ---------------------------------------------------------------
 # Page configuration
@@ -60,8 +62,6 @@ APPLE_ICON_URL = "https://raw.githubusercontent.com/2bosalem/financial-planner/m
 
 # ---------------------------------------------------------------
 # iOS icon path 1 — direct HTML markup at the very top of the page.
-# Safari scans the rendered DOM for apple-touch-icon when the user
-# taps "Add to Home Screen", so these tags are emitted immediately.
 # ---------------------------------------------------------------
 st.markdown(
     f"""
@@ -78,7 +78,6 @@ st.markdown(
 
 # ---------------------------------------------------------------
 # iOS icon path 2 — programmatic injection into the parent <head>
-# (removes any stale tags first, then re-adds with the fresh URL).
 # ---------------------------------------------------------------
 components.html(
     f"""
@@ -300,6 +299,63 @@ def fmt(x: float) -> str:
 
 
 # ===============================================================
+# CLOUD SYNC BACKEND — private GitHub Gist shared by ALL devices.
+# Configure once in Streamlit Cloud → Settings → Secrets:
+#   GH_TOKEN = "ghp_xxxxxxxx"   (classic token, 'gist' scope only)
+#   GIST_ID  = "xxxxxxxxxxxxxxxx"
+# ===============================================================
+GIST_FILE = "wealth_data.json"
+
+
+def _cloud_configured() -> bool:
+    try:
+        return bool(st.secrets["GH_TOKEN"]) and bool(st.secrets["GIST_ID"])
+    except Exception:
+        return False
+
+
+CLOUD_ON = _cloud_configured()
+
+
+def _gh_headers() -> dict:
+    return {
+        "Authorization": f"token {st.secrets['GH_TOKEN']}",
+        "Accept": "application/vnd.github+json",
+    }
+
+
+def cloud_load() -> dict | None:
+    """Fetch the shared JSON blob from the private gist (one call/session)."""
+    try:
+        r = requests.get(
+            f"https://api.github.com/gists/{st.secrets['GIST_ID']}",
+            headers=_gh_headers(),
+            timeout=10,
+        )
+        if r.status_code == 200:
+            content = r.json().get("files", {}).get(GIST_FILE, {}).get("content", "")
+            if content.strip():
+                return json.loads(content)
+    except Exception:
+        pass
+    return None
+
+
+def cloud_save(payload: dict) -> bool:
+    """Write the shared JSON blob back to the private gist."""
+    try:
+        r = requests.patch(
+            f"https://api.github.com/gists/{st.secrets['GIST_ID']}",
+            headers=_gh_headers(),
+            json={"files": {GIST_FILE: {"content": json.dumps(payload, ensure_ascii=False, indent=1)}}},
+            timeout=10,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+# ===============================================================
 # SECURE GATE
 # ===============================================================
 if "authenticated" not in st.session_state:
@@ -330,8 +386,8 @@ if not st.session_state.authenticated:
 
 # ===============================================================
 # PERSISTENCE — LOAD (runs before any widget is created)
-# Reads the saved JSON blob from the phone's localStorage and seeds
-# st.session_state so every widget opens on the user's last numbers.
+# Primary: shared cloud gist (identical data on every device).
+# Fallback: this device's localStorage (when secrets not configured).
 # ===============================================================
 PERSISTED_WIDGET_KEYS = (
     ["start_month", "start_year", "init_balance", "currency", "salary", "spend_limit", "anchor_balance"]
@@ -339,28 +395,39 @@ PERSISTED_WIDGET_KEYS = (
     + [f"ob_amount_{i}" for i in range(1, 5)]
 )
 
-if HAS_STORAGE and not st.session_state.get("_storage_loaded", False):
-    _raw = streamlit_js_eval(
-        js_expressions=f"localStorage.getItem('{STORAGE_KEY}')",
-        key="_ls_read",
-    )
-    if _raw:
-        try:
-            _saved = json.loads(_raw)
-            for _k in PERSISTED_WIDGET_KEYS:
-                if _k in _saved:
-                    st.session_state[_k] = _saved[_k]
-            if isinstance(_saved.get("anchor_abs_month"), list):
-                st.session_state["anchor_abs_month"] = tuple(_saved["anchor_abs_month"])
-        except Exception:
-            pass
+
+def _apply_saved(saved: dict) -> None:
+    for _k in PERSISTED_WIDGET_KEYS:
+        if _k in saved:
+            st.session_state[_k] = saved[_k]
+    if isinstance(saved.get("anchor_abs_month"), list):
+        st.session_state["anchor_abs_month"] = tuple(saved["anchor_abs_month"])
+
+
+if not st.session_state.get("_storage_loaded", False):
+    if CLOUD_ON:
+        _saved = cloud_load()
+        if _saved:
+            try:
+                _apply_saved(_saved)
+            except Exception:
+                pass
         st.session_state["_storage_loaded"] = True
+    elif HAS_STORAGE:
+        _raw = streamlit_js_eval(
+            js_expressions=f"localStorage.getItem('{STORAGE_KEY}')",
+            key="_ls_read",
+        )
+        if _raw:
+            try:
+                _apply_saved(json.loads(_raw))
+            except Exception:
+                pass
+            st.session_state["_storage_loaded"] = True
 
 # ===============================================================
 # MAIN TERMINAL — strict top-to-bottom sequence:
 #   hero → anchor inputs → status → May console → table → settings
-# (settings execute first in code so values feed every block,
-#  but they sit at the very bottom of the page)
 # ===============================================================
 st.markdown('<div class="hero">🏦 منصة الثروة الخاصة</div>', unsafe_allow_html=True)
 st.markdown('<div class="hero-sub">PRIVATE WEALTH TERMINAL</div>', unsafe_allow_html=True)
@@ -425,10 +492,7 @@ if st.session_state.get("anchor_abs_month") not in timeline:
     st.session_state["anchor_abs_month"] = timeline[0]
 
 # ---------------------------------------------------------------
-# [TOP] Current Status Update — anchor inputs
-# The anchor is an ABSOLUTE calendar month (year, month), NOT a row
-# index — changing شهر البداية re-positions rows but the anchor stays
-# pinned to the same real-world month, so الخطة المحدثة never shifts.
+# [TOP] Current Status Update — anchor inputs (absolute month anchor)
 # ---------------------------------------------------------------
 with anchor_area:
     with st.container(border=True):
@@ -451,7 +515,7 @@ with anchor_area:
             )
         st.caption(
             "يظهر رصيدك كما هو تمامًا في شهره (لقطة واقعية بلا أي تعديل) — "
-            "وتُحفظ كل مدخلاتك تلقائيًا على جهازك ضد التصفير."
+            "وتُحفظ مدخلاتك سحابيًا لتظهر متطابقة على جميع أجهزتك."
         )
 
 anchor_idx = timeline.index(anchor_month_abs)
@@ -460,7 +524,6 @@ has_anchor = anchor_balance is not None
 # ---------------------------------------------------------------
 # Chain 1 — الخطة الأصلية (baseline)
 #   Row 1 : (initial − total_obligations) + salary − spending
-#           August 2026: (80410 − 29200) + 3300 − 5000 = 49510
 #   Row n : (previous + salary) − spending
 # ---------------------------------------------------------------
 standard_balances = []
@@ -474,10 +537,8 @@ for i in range(24):
 
 # ---------------------------------------------------------------
 # Chain 2 — الخطة المحدثة (absolute time-anchoring)
-#   Fully independent loop — reads NOTHING from the baseline chain.
 #   * rows BEFORE the anchor : None → rendered as '—'
-#   * anchor row             : الرصيد الفعلي الحالي EXACTLY as typed —
-#       raw real-world snapshot, zero modifications.
+#   * anchor row             : الرصيد الفعلي الحالي EXACTLY as typed
 #   * all FUTURE rows        : (previous + salary) − spending
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
@@ -641,25 +702,37 @@ with table_area:
 
 # ===============================================================
 # PERSISTENCE — SAVE (runs after all inputs are known)
-# Mirrors the current inputs into localStorage on every change.
+# Primary: PATCH the shared gist whenever any input changes.
+# Fallback: mirror into this device's localStorage.
 # ===============================================================
-if HAS_STORAGE:
-    _payload = {
-        "start_month": int(start_month),
-        "start_year": int(start_year),
-        "init_balance": float(initial_balance),
-        "currency": currency,
-        "salary": float(salary),
-        "spend_limit": float(spend_limit),
-        "anchor_abs_month": list(anchor_month_abs),
-        "anchor_balance": float(anchor_balance) if has_anchor else None,
-    }
-    for i in range(1, 5):
-        _payload[f"ob_name_{i}"] = st.session_state.get(f"ob_name_{i}", "")
-        _payload[f"ob_amount_{i}"] = float(st.session_state.get(f"ob_amount_{i}", 0.0))
+_payload = {
+    "start_month": int(start_month),
+    "start_year": int(start_year),
+    "init_balance": float(initial_balance),
+    "currency": currency,
+    "salary": float(salary),
+    "spend_limit": float(spend_limit),
+    "anchor_abs_month": list(anchor_month_abs),
+    "anchor_balance": float(anchor_balance) if has_anchor else None,
+}
+for i in range(1, 5):
+    _payload[f"ob_name_{i}"] = st.session_state.get(f"ob_name_{i}", "")
+    _payload[f"ob_amount_{i}"] = float(st.session_state.get(f"ob_amount_{i}", 0.0))
 
+if CLOUD_ON:
+    # Save only when something actually changed (one API call per edit)
+    if st.session_state.get("_last_saved_payload") != _payload:
+        if cloud_save(_payload):
+            st.session_state["_last_saved_payload"] = _payload
+            st.caption("☁️ محفوظ ومتزامن عبر جميع أجهزتك")
+        else:
+            st.caption("⚠️ تعذّر الحفظ السحابي مؤقتًا — سيُعاد تلقائيًا مع أول تعديل قادم")
+    else:
+        st.caption("☁️ محفوظ ومتزامن عبر جميع أجهزتك")
+elif HAS_STORAGE:
     _payload_js = json.dumps(json.dumps(_payload, ensure_ascii=False))
     streamlit_js_eval(
         js_expressions=f"localStorage.setItem('{STORAGE_KEY}', {_payload_js})",
         key="_ls_write",
     )
+    st.caption("💾 حفظ محلي على هذا الجهاز فقط — لتفعيل المزامنة بين الأجهزة أضف GH_TOKEN وGIST_ID في الإعدادات السرية")
