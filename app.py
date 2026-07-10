@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v11)
-  MATH (hard rules)
-  * الخطة الأصلية : month 1 = ((initial − TOTAL obligations) + salary) − spending
-                    month n = (previous + salary) − spending
-  * الخطة المحدثة : anchor month = entered balance − TOTAL obligations
-                    (the 4 annual obligations are cleanly deducted at the
-                     anchor so the future path is never artificially inflated;
-                     the entered balance already includes that month's salary,
-                     so salary additions begin strictly the FOLLOWING month)
-                    following months = (previous + salary) − spending
-                    months before the anchor = '—'
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v12)
+  ABSOLUTE MATH RULES
+  * الخطة الأصلية :
+      Month 1 = (الرصيد الافتتاحي − TOTAL annual obligations) + الراتب − حد الصرف
+                e.g. August 2026: (80410 − 29200) + 3300 − 5000 = 49510
+      Month n = (previous + الراتب) − حد الصرف
+  * الخطة المحدثة (zero-modification anchor):
+      Anchor month = الرصيد الفعلي الحالي EXACTLY as typed (raw real-world
+      anchor — no obligations deduction, no salary, no spending applied).
+      Future months = (previous + الراتب) − حد الصرف.
+      Annual obligations exist ONLY in the baseline's Month 1 — never in
+      the extrapolated chain (the real cash input already absorbed them).
+      Months before the anchor = '—'.
   UI
-  * Passcode gate "2806"
-  * Apple system font stack (SF Arabic on iPhone) — no stylized webfont
-  * Vertical sequence: anchor inputs → status → May console (future
-    milestones only) → 3-column table → collapsed settings expanders
-  * Zero-scroll phone canvas, everything center-aligned
+  * Passcode gate "2806", Apple system font, centered numbers,
+    inputs on top → status → May console (future only) → table →
+    collapsed expanders at the very bottom, single-screen fit.
 Arabic RTL.
 """
 
@@ -40,14 +40,13 @@ MAY = 4          # index of مايو
 ACCESS_CODE = "2806"
 
 # ---------------------------------------------------------------
-# CSS — clean Apple system typography (SF Arabic renders natively on
-# iPhone), compressed zero-scroll spacing, and self-contained blocks.
-# Native widget surfaces stay with .streamlit/config.toml.
+# CSS — Apple system typography, compressed zero-scroll spacing,
+# self-contained blocks. Native widgets stay with config.toml theme.
 # ---------------------------------------------------------------
 st.markdown(
     """
     <style>
-    /* Clean system typography — no stylized webfont; icon-font safe */
+    /* Clean system typography — icon-font safe */
     .stApp, .stApp p, .stApp div, .stApp span, .stApp label,
     .stApp input, .stApp button, .stApp td, .stApp th {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -119,7 +118,7 @@ st.markdown(
     .t-amber { color: #b45309; }
     .t-red   { color: #b91c1c; }
 
-    /* ---------------- May Milestones console (future only) ---------------- */
+    /* ---------------- May Milestones console ---------------- */
     .may-terminal {
         background: #f8f9fa;
         border: 1px solid #e2e8f0;
@@ -254,7 +253,7 @@ if not st.session_state.authenticated:
 # ===============================================================
 # MAIN TERMINAL — strict top-to-bottom sequence:
 #   hero → anchor inputs → status → May console → table → settings
-# (settings are executed first in code so values feed every block,
+# (settings execute first in code so values feed every block,
 #  but they sit at the very bottom of the page)
 # ===============================================================
 st.markdown('<div class="hero">🏦 منصة الثروة الخاصة</div>', unsafe_allow_html=True)
@@ -268,6 +267,8 @@ settings_area = st.container()
 
 # ---------------------------------------------------------------
 # Settings (bottom of page visually, executed first for values)
+# Defaults reflect the real plan: August 2026 start, 80,410 opening
+# balance, 3,300 salary, 5,000 spending limit, 29,200 obligations.
 # ---------------------------------------------------------------
 with settings_area:
     with st.expander("الإعدادات الأساسية", expanded=False):
@@ -277,29 +278,29 @@ with settings_area:
                 "شهر البداية",
                 options=list(range(1, 13)),
                 format_func=lambda m: MONTH_NAMES[m - 1],
-                index=0,
+                index=7,  # أغسطس
                 key="start_month",
             )
-            initial_balance = st.number_input("الرصيد الافتتاحي", value=10000.0, step=500.0, key="init_balance")
+            initial_balance = st.number_input("الرصيد الافتتاحي", value=80410.0, step=500.0, key="init_balance")
             currency = st.text_input("العملة", value="KD", max_chars=8, key="currency")
         with c2:
             start_year = st.number_input("سنة البداية", min_value=2020, max_value=2100, value=2026, step=1, key="start_year")
-            salary = st.number_input("الراتب الشهري", min_value=0.0, value=8000.0, step=250.0, key="salary")
-            spend_limit = st.number_input("حد الصرف الشهري", min_value=0.0, value=6000.0, step=250.0, key="spend_limit")
+            salary = st.number_input("الراتب الشهري", min_value=0.0, value=3300.0, step=100.0, key="salary")
+            spend_limit = st.number_input("حد الصرف الشهري", min_value=0.0, value=5000.0, step=100.0, key="spend_limit")
 
-    with st.expander("الالتزامات السنوية الأربعة", expanded=False):
+    with st.expander("الالتزامات السنوية الأربعة — تُخصم مرة واحدة في الشهر الأول من الخطة الأصلية فقط", expanded=False):
         default_obligations = [
-            ("تأمين السيارة", 3000.0),
-            ("رسوم المدارس", 6000.0),
-            ("صيانة / إيجار سنوي", 4000.0),
-            ("سفر العائلة", 5000.0),
+            ("الالتزام السنوي 1", 7300.0),
+            ("الالتزام السنوي 2", 7300.0),
+            ("الالتزام السنوي 3", 7300.0),
+            ("الالتزام السنوي 4", 7300.0),
         ]
         obligation_amounts = []
         for i, (d_name, d_amount) in enumerate(default_obligations, start=1):
             n_col, a_col = st.columns([1.4, 1])
             n_col.text_input(f"الالتزام {i}", value=d_name, key=f"ob_name_{i}")
             obligation_amounts.append(
-                a_col.number_input(f"المبلغ {i}", min_value=0.0, value=d_amount, step=500.0, key=f"ob_amount_{i}")
+                a_col.number_input(f"المبلغ {i}", min_value=0.0, value=d_amount, step=100.0, key=f"ob_amount_{i}")
             )
 
 total_obligations = float(sum(obligation_amounts))
@@ -330,42 +331,44 @@ with anchor_area:
             )
         with a2:
             anchor_balance = st.number_input(
-                "الرصيد الفعلي الحالي (شامل راتب الشهر)",
+                "الرصيد الفعلي الحالي",
                 value=None,
-                step=500.0,
+                step=100.0,
                 placeholder="أدخل رصيدك…",
                 key="anchor_balance",
             )
-        st.caption(
-            f"يُخصم إجمالي الالتزامات السنوية ({fmt(total_obligations)}) تلقائيًا من رصيدك المدخل عند نقطة الانطلاق."
-        )
+        st.caption("يُعتمد رصيدك المدخل كما هو تمامًا كنقطة انطلاق — دون أي خصم أو إضافة في شهره.")
 
 has_anchor = anchor_balance is not None
 
 # ---------------------------------------------------------------
 # Chain 1 — الخطة الأصلية (baseline)
-#   Month 1 : ((initial − TOTAL obligations) + salary) − spending
+#   Month 1 : (initial − TOTAL obligations) + salary − spending
+#             August 2026: (80410 − 29200) + 3300 − 5000 = 49510
 #   Month n : (previous + salary) − spending
 # ---------------------------------------------------------------
 standard_balances = []
 prev = float(initial_balance)
 for i in range(24):
-    structural_hit = total_obligations if i == 0 else 0.0
-    prev = ((prev - structural_hit) + float(salary)) - float(spend_limit)
+    if i == 0:
+        prev = (prev - total_obligations) + float(salary) - float(spend_limit)
+    else:
+        prev = (prev + float(salary)) - float(spend_limit)
     standard_balances.append(prev)
 
 # ---------------------------------------------------------------
-# Chain 2 — الخطة المحدثة (anchored forecast)
+# Chain 2 — الخطة المحدثة (zero-modification anchor)
 #   * months BEFORE the anchor : None → rendered as '—'
-#   * anchor month             : entered balance − TOTAL obligations
-#       (clean deduction at the anchor so the future path is never
-#        inflated; the entered balance already includes that month's
-#        salary, so NO salary is added at the anchor itself)
+#   * anchor month             : الرصيد الفعلي الحالي EXACTLY as typed.
+#       Raw real-world anchor — NO obligations deduction, NO salary,
+#       NO spending limit applied to this row.
 #   * months AFTER the anchor  : (previous + salary) − spending
+#       Obligations NEVER appear in this chain — the real cash input
+#       already absorbed their financial impact.
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
 if has_anchor:
-    prev = float(anchor_balance) - total_obligations   # clean obligations deduction
+    prev = float(anchor_balance)          # exactly as typed — untouched
     updated_balances[anchor_idx] = prev
     for i in range(anchor_idx + 1, 24):
         prev = (prev + float(salary)) - float(spend_limit)
@@ -385,8 +388,8 @@ target_label = month_labels[target_idx]
 with status_area:
     if not has_anchor or updated_balances[target_idx] is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — تُخصم الالتزامات فورًا "
-            "ويبدأ احتساب الراتب من الشهر التالي حتى محطة مايو."
+            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — يُعتمد رصيدك كما هو، "
+            "ويبدأ احتساب الراتب وحد الصرف من الشهر التالي حتى محطة مايو."
         )
     else:
         m_std = standard_balances[target_idx]
