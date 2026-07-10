@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v12)
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v13)
   ABSOLUTE MATH RULES
   * الخطة الأصلية :
       Month 1 = (الرصيد الافتتاحي − TOTAL annual obligations) + الراتب − حد الصرف
                 e.g. August 2026: (80410 − 29200) + 3300 − 5000 = 49510
       Month n = (previous + الراتب) − حد الصرف
-  * الخطة المحدثة (zero-modification anchor):
-      Anchor month = الرصيد الفعلي الحالي EXACTLY as typed (raw real-world
-      anchor — no obligations deduction, no salary, no spending applied).
-      Future months = (previous + الراتب) − حد الصرف.
-      Annual obligations exist ONLY in the baseline's Month 1 — never in
-      the extrapolated chain (the real cash input already absorbed them).
+  * الخطة المحدثة (dynamic anchor + future-mirror engine):
+      Anchor month  = الرصيد الفعلي الحالي EXACTLY as typed — a raw
+                      real-world snapshot, zero modifications.
+      Anchor + 1    = (anchor input − TOTAL annual obligations)
+                      + الراتب − حد الصرف
+                      (the future mirror copies the structural obligations
+                       hit into the new timeline so it is never forgotten)
+      Later months  = (previous + الراتب) − حد الصرف
       Months before the anchor = '—'.
   UI
   * Passcode gate "2806", Apple system font, centered numbers,
@@ -337,7 +339,10 @@ with anchor_area:
                 placeholder="أدخل رصيدك…",
                 key="anchor_balance",
             )
-        st.caption("يُعتمد رصيدك المدخل كما هو تمامًا كنقطة انطلاق — دون أي خصم أو إضافة في شهره.")
+        st.caption(
+            "يظهر رصيدك المدخل كما هو تمامًا في شهره الحالي، "
+            f"وتُخصم الالتزامات السنوية ({fmt(total_obligations)}) مرة واحدة في الشهر التالي مباشرة."
+        )
 
 has_anchor = anchor_balance is not None
 
@@ -357,21 +362,25 @@ for i in range(24):
     standard_balances.append(prev)
 
 # ---------------------------------------------------------------
-# Chain 2 — الخطة المحدثة (zero-modification anchor)
+# Chain 2 — الخطة المحدثة (dynamic anchor + future-mirror engine)
 #   * months BEFORE the anchor : None → rendered as '—'
-#   * anchor month             : الرصيد الفعلي الحالي EXACTLY as typed.
-#       Raw real-world anchor — NO obligations deduction, NO salary,
-#       NO spending limit applied to this row.
-#   * months AFTER the anchor  : (previous + salary) − spending
-#       Obligations NEVER appear in this chain — the real cash input
-#       already absorbed their financial impact.
+#   * anchor month             : الرصيد الفعلي الحالي EXACTLY as typed —
+#       a raw real-world snapshot, zero modifications.
+#   * anchor + 1 (first future month):
+#       (anchor input − TOTAL annual obligations) + salary − spending
+#       — the future mirror copies the structural obligations hit into
+#         the new timeline so it is never forgotten.
+#   * all later months         : (previous + salary) − spending
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
 if has_anchor:
     prev = float(anchor_balance)          # exactly as typed — untouched
     updated_balances[anchor_idx] = prev
     for i in range(anchor_idx + 1, 24):
-        prev = (prev + float(salary)) - float(spend_limit)
+        if i == anchor_idx + 1:
+            prev = (prev - total_obligations) + float(salary) - float(spend_limit)
+        else:
+            prev = (prev + float(salary)) - float(spend_limit)
         updated_balances[i] = prev
 
 # ---------------------------------------------------------------
@@ -388,8 +397,8 @@ target_label = month_labels[target_idx]
 with status_area:
     if not has_anchor or updated_balances[target_idx] is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — يُعتمد رصيدك كما هو، "
-            "ويبدأ احتساب الراتب وحد الصرف من الشهر التالي حتى محطة مايو."
+            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — يظهر رصيدك كما هو، "
+            "وتُخصم الالتزامات مع أول شهر تالٍ ثم يستمر المسار حتى محطة مايو."
         )
     else:
         m_std = standard_balances[target_idx]
