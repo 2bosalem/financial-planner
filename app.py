@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-منصة الثروة الخاصة — Private Banking Wealth Terminal (v14)
-  ABSOLUTE MATH RULES — two fully independent calculation loops
-  * الخطة الأصلية (depends ONLY on plan settings):
-      Month 1 = (الرصيد الافتتاحي − TOTAL annual obligations) + الراتب − حد الصرف
+منصة الثروة الخاصة — Private Banking Wealth Terminal (v15)
+  ABSOLUTE MATH RULES — two fully independent calculation loops.
+  Both scenarios execute the SAME conservative launch formula at their
+  own launch row, so the obligations deduction can never be skipped:
+  * الخطة الأصلية (launch row = شهر البداية):
+      Row 1   = (الرصيد الافتتاحي − total_obligations) + الراتب − حد الصرف
                 e.g. August 2026: (80410 − 29200) + 3300 − 5000 = 49510
-      Month n = (previous + الراتب) − حد الصرف
-  * الخطة المحدثة (absolute time-anchoring — 100% INDEPENDENT of شهر البداية):
+      Row n   = (previous + الراتب) − حد الصرف
+  * الخطة المحدثة (launch row = الشهر الحالي, wherever it sits):
+      Anchor row    = (الرصيد الفعلي الحالي − total_obligations)
+                      + الراتب − حد الصرف
+                      — the deduction fires EXACTLY at the user's
+                      real-world launch row, mirroring the baseline math,
+                      regardless of the row's position in the grid.
+      Future rows   = (previous + الراتب) − حد الصرف
+      Rows before the anchor = '—'.
       The anchor is stored as an ABSOLUTE calendar month (year + month),
-      never as a row index, so changing the plan's start month can never
-      shift or alter the updated plan.
-      Anchor month  = الرصيد الفعلي الحالي EXACTLY as typed — a raw
-                      real-world snapshot (no salary, no spending,
-                      no obligations).
-      Future months = (previous + الراتب) − حد الصرف — depends only on
-                      the distance from the anchor month.
-      Months before the anchor = '—'.
+      never a row index — 100% immune to changes in شهر البداية.
   UI
   * Passcode gate "2806", Apple system font, centered numbers,
     inputs on top → status → May console (future only) → table →
@@ -291,7 +293,7 @@ with settings_area:
             salary = st.number_input("الراتب الشهري", min_value=0.0, value=3300.0, step=100.0, key="salary")
             spend_limit = st.number_input("حد الصرف الشهري", min_value=0.0, value=5000.0, step=100.0, key="spend_limit")
 
-    with st.expander("الالتزامات السنوية الأربعة — تُخصم مرة واحدة في الشهر الأول من الخطة الأصلية فقط", expanded=False):
+    with st.expander("الالتزامات السنوية الأربعة — تُخصم عند صف الانطلاق في كل سيناريو", expanded=False):
         default_obligations = [
             ("الالتزام السنوي 1", 7300.0),
             ("الالتزام السنوي 2", 7300.0),
@@ -346,8 +348,8 @@ with anchor_area:
                 key="anchor_balance",
             )
         st.caption(
-            "يظهر رصيدك المدخل كما هو تمامًا في شهره — نقطة ارتساء زمنية مطلقة "
-            "لا تتأثر بتغيير شهر بداية الخطة."
+            f"صف الانطلاق يُحسب: (رصيدك − الالتزامات {fmt(total_obligations)}) + الراتب − حد الصرف — "
+            "نقطة ارتساء زمنية مطلقة لا تتأثر بتغيير شهر بداية الخطة."
         )
 
 anchor_idx = timeline.index(anchor_month_abs)
@@ -355,9 +357,9 @@ has_anchor = anchor_balance is not None
 
 # ---------------------------------------------------------------
 # Chain 1 — الخطة الأصلية (baseline)
-#   Month 1 : (initial − TOTAL obligations) + salary − spending
-#             August 2026: (80410 − 29200) + 3300 − 5000 = 49510
-#   Month n : (previous + salary) − spending
+#   Row 1 : (initial − total_obligations) + salary − spending
+#           August 2026: (80410 − 29200) + 3300 − 5000 = 49510
+#   Row n : (previous + salary) − spending
 # ---------------------------------------------------------------
 standard_balances = []
 prev = float(initial_balance)
@@ -369,18 +371,20 @@ for i in range(24):
     standard_balances.append(prev)
 
 # ---------------------------------------------------------------
-# Chain 2 — الخطة المحدثة (absolute time-anchoring)
+# Chain 2 — الخطة المحدثة (absolute time-anchoring, mirrored launch)
 #   Fully independent loop — reads NOTHING from the baseline chain and
 #   depends only on the anchor month's absolute position in time.
-#   * months BEFORE the anchor : None → rendered as '—'
-#   * anchor month             : الرصيد الفعلي الحالي EXACTLY as typed —
-#       raw real-world snapshot (no salary, no spending, no obligations).
-#   * all FUTURE months        : (previous + salary) − spending —
-#       each value depends only on the distance from the anchor month.
+#   * rows BEFORE the anchor : None → rendered as '—'
+#   * the anchor (launch) row:
+#       (الرصيد الفعلي الحالي − total_obligations) + salary − spending
+#       — the obligations deduction fires EXACTLY here, at the user's
+#         real-world launch row, mirroring the baseline's Row-1 math,
+#         no matter where this row sits in the grid.
+#   * all FUTURE rows        : (previous + salary) − spending
 # ---------------------------------------------------------------
 updated_balances = [None] * 24
 if has_anchor:
-    prev = float(anchor_balance)          # exactly as typed — untouched
+    prev = (float(anchor_balance) - total_obligations) + float(salary) - float(spend_limit)
     updated_balances[anchor_idx] = prev
     for i in range(anchor_idx + 1, 24):
         prev = (prev + float(salary)) - float(spend_limit)
@@ -400,8 +404,8 @@ target_label = month_labels[target_idx]
 with status_area:
     if not has_anchor or updated_balances[target_idx] is None:
         dot, text = "dot-info", (
-            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — يظهر رصيدك كما هو "
-            "في شهره، ويستمر المسار (+ الراتب − حد الصرف) حتى محطة مايو."
+            "أدخل شهرك الحالي ورصيدك الفعلي لبدء التتبع — تُخصم الالتزامات في "
+            "صف الانطلاق نفسه ثم يستمر المسار (+ الراتب − حد الصرف) حتى محطة مايو."
         )
     else:
         m_std = standard_balances[target_idx]
